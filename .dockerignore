@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/.git/
+**/.vs/
+**/.vscode/
+**/node_modules/
+**/.planning/
+**/docs/
+**/cashflow-repo/
+*.md
+!README.md

@@ -1,0 +1,112 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: src/FluxoDeCaixa.Api/Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__Marten=Host=postgres;Database=fluxodecaixa;Username=postgres;Password=postgres
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Username=guest
+      - RabbitMq__Password=guest
+      # Identidade: a API é resource server. Não emite token e não guarda senha —
+      # apenas valida assinatura RS256 contra o JWKS do Keycloak.
+      # Authority = issuer que o browser enxerga (precisa bater com o claim iss).
+      # MetadataAddress = URL alcançável de dentro da rede Docker.
+      - Keycloak__Authority=http://localhost:8081/realms/fluxocaixa
+      - Keycloak__MetadataAddress=http://keycloak:8080/realms/fluxocaixa/.well-known/openid-configuration
+      - Keycloak__Audience=fluxocaixa-api
+      - Keycloak__RequireHttpsMetadata=false
+      - Cors__OrigensPermitidas__0=http://localhost:5010
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: src/FluxoDeCaixa.Web/Dockerfile
+    ports:
+      - "5010:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: fluxodecaixa
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/seed-data.sql:/docker-entrypoint-initdb.d/02-seed-data.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    # start-dev: H2 embutido e HTTP puro — adequado apenas ao ambiente local.
+    # Em produção: `start`, PostgreSQL dedicado, TLS e hostname real.
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Hostname que o browser usa — define o claim `iss` dos tokens.
+      KC_HOSTNAME: http://localhost:8081
+      # Permite que chamadas backchannel (a API buscando o JWKS por
+      # http://keycloak:8080) resolvam pela URL da própria requisição,
+      # enquanto o issuer permanece o hostname público.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak/realm-fluxocaixa.json:/opt/keycloak/data/import/realm-fluxocaixa.json:ro
+    ports:
+      - "8081:8080"
+    healthcheck:
+      # A imagem do Keycloak 26 não traz curl nem wget; usa-se o /dev/tcp do bash.
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; grep -q '\"status\": \"UP\"' <&3",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      # O RabbitMQ pode levar mais de 90s para subir em disco lento (ex.: WSL2).
+      retries: 20
+      start_period: 60s
+
+volumes:
+  postgres_data:
+  rabbitmq_data:

@@ -1,0 +1,123 @@
+@page "/"
+@attribute [Authorize]
+@using System.Globalization
+@using FluxoDeCaixa.Web.Services
+@inject FluxoDeCaixaApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Dashboard - Fluxo de Caixa</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="4">
+        <MudDatePicker Label="Data" @bind-Date="_selectedDate" @bind-Date:after="LoadConsolidadoAsync"
+                       DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Class="mb-4" />
+    </MudItem>
+</MudGrid>
+
+@if (_loading)
+{
+    <MudGrid Class="mt-4" Justify="Justify.Center">
+        <MudItem>
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </MudItem>
+    </MudGrid>
+}
+else if (_noData)
+{
+    <MudAlert Severity="Severity.Info" Class="mt-4">
+        Nenhum lançamento registrado na data selecionada.
+    </MudAlert>
+}
+else if (_consolidado is not null)
+{
+    <MudGrid Class="mt-2" Spacing="4">
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent Class="d-flex flex-column align-center pa-4">
+                    <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Success" Size="Size.Large" />
+                    <MudText Typo="Typo.subtitle1" Class="mt-2" Color="Color.Success">Total Créditos</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-1">
+                        @_consolidado.TotalCreditos.ToString("C", _ptBr)
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent Class="d-flex flex-column align-center pa-4">
+                    <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Color="Color.Error" Size="Size.Large" />
+                    <MudText Typo="Typo.subtitle1" Class="mt-2" Color="Color.Error">Total Débitos</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-1">
+                        @_consolidado.TotalDebitos.ToString("C", _ptBr)
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent Class="d-flex flex-column align-center pa-4">
+                    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" Size="Size.Large" />
+                    <MudText Typo="Typo.subtitle1" Class="mt-2" Color="Color.Primary">Saldo Líquido</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-1">
+                        @_consolidado.SaldoLiquido.ToString("C", _ptBr)
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent Class="d-flex flex-column align-center pa-4">
+                    <MudIcon Icon="@Icons.Material.Filled.Receipt" Color="Color.Secondary" Size="Size.Large" />
+                    <MudText Typo="Typo.subtitle1" Class="mt-2" Color="Color.Secondary">Lançamentos</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-1">
+                        @_consolidado.QuantidadeLancamentos
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private static readonly CultureInfo _ptBr = new("pt-BR");
+
+    private DateTime? _selectedDate = DateTime.Today;
+    private Models.ConsolidadoDiarioResponse? _consolidado;
+    private bool _loading;
+    private bool _noData;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConsolidadoAsync();
+    }
+
+    private async Task LoadConsolidadoAsync()
+    {
+        if (_selectedDate is null) return;
+
+        _loading = true;
+        _noData = false;
+        _consolidado = null;
+
+        try
+        {
+            var data = DateOnly.FromDateTime(_selectedDate.Value);
+            _consolidado = await Api.ConsultarConsolidadoAsync(data);
+            // Dia sem movimento responde 200 com zeros (nao 404)
+            _noData = _consolidado is null || _consolidado.QuantidadeLancamentos == 0;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao carregar consolidado: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

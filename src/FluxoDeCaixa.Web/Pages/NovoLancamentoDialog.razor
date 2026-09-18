@@ -1,0 +1,98 @@
+@inject FluxoDeCaixaApiClient Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Add" Class="mr-2" />
+            Novo Lançamento
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudNumericField T="decimal" Label="Valor (R$)" @bind-Value="_valor"
+                             Min="0.01m" Required="true" RequiredError="Valor é obrigatório"
+                             Format="N2" Variant="Variant.Outlined" Class="mb-3" />
+
+            <MudSelect T="string" Label="Tipo" @bind-Value="_tipo" Required="true"
+                       RequiredError="Tipo é obrigatório" Variant="Variant.Outlined" Class="mb-3">
+                <MudSelectItem T="string" Value="@("Credito")">Crédito</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Debito")">Débito</MudSelectItem>
+            </MudSelect>
+
+            <MudSelect T="string" Label="Categoria" @bind-Value="_categoria" Required="true"
+                       RequiredError="Categoria é obrigatória" Variant="Variant.Outlined" Class="mb-3">
+                <MudSelectItem T="string" Value="@("Alimentação")">Alimentação</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Transporte")">Transporte</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Salário")">Salário</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Vendas")">Vendas</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Aluguel")">Aluguel</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Serviços")">Serviços</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Impostos")">Impostos</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Outros")">Outros</MudSelectItem>
+            </MudSelect>
+
+            <MudDatePicker Label="Data" @bind-Date="_data" DateFormat="dd/MM/yyyy"
+                           Required="true" RequiredError="Data é obrigatória"
+                           Variant="Variant.Outlined" Class="mb-3" />
+
+            <MudTextField T="string" Label="Descrição (opcional)" @bind-Value="_descricao"
+                          Variant="Variant.Outlined" Lines="2" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="_submitting">
+            @if (_submitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Salvar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private MudDialogInstance MudDialog { get; set; } = default!;
+
+    private MudForm? _form;
+    private decimal _valor;
+    private string _tipo = "Credito";
+    private string _categoria = "";
+    private DateTime? _data = DateTime.Today;
+    private string? _descricao;
+    private bool _submitting;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        if (_form is not null)
+            await _form.Validate();
+
+        if (_form?.IsValid != true) return;
+        if (_data is null) return;
+
+        _submitting = true;
+
+        try
+        {
+            var request = new Models.RegistrarLancamentoRequest(
+                _valor, _tipo, DateOnly.FromDateTime(_data.Value), _descricao, _categoria);
+
+            await Api.RegistrarLancamentoAsync(request);
+            Snackbar.Add("Lançamento registrado com sucesso!", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao registrar lançamento: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

@@ -1,0 +1,39 @@
+@page "/authentication/{action}"
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+
+@* Trata os retornos do fluxo OIDC: login, callback de login, logout e
+   callback de logout. As rotas sao as que a biblioteca do Blazor espera. *@
+<RemoteAuthenticatorView Action="@Action">
+    <LoggingIn>
+        <MudContainer Class="d-flex flex-column align-center justify-center" Style="height: 60vh;">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Typo="Typo.h6" Class="mt-4">Redirecionando para o login...</MudText>
+        </MudContainer>
+    </LoggingIn>
+    <CompletingLoggingIn>
+        <MudContainer Class="d-flex flex-column align-center justify-center" Style="height: 60vh;">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Typo="Typo.h6" Class="mt-4">Concluindo o login...</MudText>
+        </MudContainer>
+    </CompletingLoggingIn>
+    <LogOut>
+        <MudContainer Class="d-flex flex-column align-center justify-center" Style="height: 60vh;">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Typo="Typo.h6" Class="mt-4">Saindo...</MudText>
+        </MudContainer>
+    </LogOut>
+    <LogOutSucceeded>
+        <MudContainer Class="d-flex flex-column align-center justify-center" Style="height: 60vh;">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" />
+            <MudText Typo="Typo.h6" Class="mt-4">Sessão encerrada.</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4" Href="/">
+                Entrar novamente
+            </MudButton>
+        </MudContainer>
+    </LogOutSucceeded>
+</RemoteAuthenticatorView>
+
+@code {
+    [Parameter]
+    public string? Action { get; set; }
+}

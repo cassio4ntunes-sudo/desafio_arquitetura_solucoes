@@ -1,0 +1,13 @@
+@inject NavigationManager Navigation
+
+@* Envia o usuario ao Keycloak preservando a pagina que ele tentou abrir,
+   para que volte exatamente para la depois de autenticar. *@
+@code {
+    protected override void OnInitialized()
+    {
+        var retorno = Uri.EscapeDataString(
+            Navigation.ToBaseRelativePath(Navigation.Uri));
+
+        Navigation.NavigateToLogin($"authentication/login?returnUrl=/{retorno}");
+    }
+}

@@ -1,0 +1,118 @@
+@page "/lancamentos"
+@attribute [Authorize]
+@using System.Globalization
+@using FluxoDeCaixa.Web.Services
+@inject FluxoDeCaixaApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Lançamentos - Fluxo de Caixa</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Lançamentos</MudText>
+
+<MudGrid Class="mb-4" Spacing="2">
+    <MudItem xs="12" sm="4" md="3">
+        <MudDatePicker Label="Data" @bind-Date="_selectedDate" @bind-Date:after="OnDateChanged"
+                       DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" />
+    </MudItem>
+    <MudItem xs="12" sm="4" md="3" Class="d-flex align-end">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="OpenNovoLancamentoDialog">
+            Novo Lançamento
+        </MudButton>
+    </MudItem>
+</MudGrid>
+
+<MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Elevation="2" Dense="true"
+          RowsPerPage="20" Loading="_loading" LoadingProgressColor="Color.Primary">
+    <HeaderContent>
+        <MudTh>Tipo</MudTh>
+        <MudTh>Categoria</MudTh>
+        <MudTh>Valor</MudTh>
+        <MudTh>Descrição</MudTh>
+        <MudTh>Registrado Em</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tipo">
+            <MudChip T="string"
+                     Color="@(context.Tipo == "Credito" ? Color.Success : Color.Error)"
+                     Size="Size.Small">
+                @context.Tipo
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Categoria">@context.Categoria</MudTd>
+        <MudTd DataLabel="Valor">@context.Valor.ToString("C", _ptBr)</MudTd>
+        <MudTd DataLabel="Descrição">@(context.Descricao ?? "—")</MudTd>
+        <MudTd DataLabel="Registrado Em">@context.RegistradoEm.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>Nenhum lançamento encontrado para esta data.</MudText>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new[] { 10, 20, 50 }" RowsPerPageString="Itens por página:" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private static readonly CultureInfo _ptBr = new("pt-BR");
+
+    private MudTable<Models.LancamentoResponse>? _table;
+    private DateTime? _selectedDate = DateTime.Today;
+    private bool _loading;
+
+    private async Task<TableData<Models.LancamentoResponse>> LoadServerData(TableState state, CancellationToken ct)
+    {
+        if (_selectedDate is null)
+            return new TableData<Models.LancamentoResponse> { Items = [], TotalItems = 0 };
+
+        _loading = true;
+
+        try
+        {
+            var data = DateOnly.FromDateTime(_selectedDate.Value);
+            var pagina = state.Page + 1;
+            var tamanho = state.PageSize;
+
+            var result = await Api.ConsultarLancamentosAsync(data, pagina, tamanho);
+
+            return new TableData<Models.LancamentoResponse>
+            {
+                Items = result.Itens,
+                TotalItems = result.Total
+            };
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao carregar lançamentos: {ex.Message}", Severity.Error);
+            return new TableData<Models.LancamentoResponse> { Items = [], TotalItems = 0 };
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnDateChanged()
+    {
+        if (_table is not null)
+            await _table.ReloadServerData();
+    }
+
+    private async Task OpenNovoLancamentoDialog()
+    {
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+
+        var dialog = await DialogService.ShowAsync<NovoLancamentoDialog>("Novo Lançamento", options);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && _table is not null)
+        {
+            await _table.ReloadServerData();
+        }
+    }
+}

@@ -1,0 +1,87 @@
+@inherits LayoutComponentBase
+@using FluxoDeCaixa.Web.Services
+@inject NavigationManager Nav
+@inject SignOutSessionStateManager SignOutManager
+
+<MudThemeProvider Theme="_theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Color="Color.Primary">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                       OnClick="@ToggleDrawer" />
+        <MudText Typo="Typo.h6" Class="ml-2">Fluxo de Caixa</MudText>
+        <MudSpacer />
+        <AuthorizeView>
+            <Authorized>
+                <MudText Typo="Typo.body1" Class="mr-2">@context.User.Identity?.Name</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Logout" Color="Color.Inherit"
+                               OnClick="HandleLogout" Title="Sair" />
+            </Authorized>
+            <NotAuthorized>
+                <MudButton Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Login"
+                           OnClick="HandleLogin">Entrar</MudButton>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always"
+               Variant="DrawerVariant.Mini" OpenMiniOnHover="true">
+        <MudNavMenu>
+            <MudNavLink Href="/" Match="NavLinkMatch.All"
+                        Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+            <MudNavLink Href="/lancamentos" Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.Receipt">Lançamentos</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+
+    <MudMainContent Class="pa-4">
+        @Body
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    // O estado de autenticação vem do AuthenticationStateProvider do Blazor,
+    // alimentado pelo token do Keycloak — não há mais estado próprio a manter.
+    private void HandleLogin() => Nav.NavigateToLogin("authentication/login");
+
+    private async Task HandleLogout()
+    {
+        // Encerra a sessão também no Keycloak (single logout), não apenas local.
+        await SignOutManager.SetSignOutState();
+        Nav.NavigateToLogout("authentication/logout");
+    }
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#1565C0",
+            Secondary = "#00897B",
+            AppbarBackground = "#1565C0",
+            DrawerBackground = "#263238",
+            DrawerText = "#FFFFFFB3",
+            DrawerIcon = "#FFFFFFB3",
+            Background = "#F5F5F5",
+            Surface = "#FFFFFF"
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#1E88E5",
+            Secondary = "#26A69A"
+        },
+        Typography = new Typography
+        {
+            Default = new Default
+            {
+                FontFamily = new[] { "Roboto", "Helvetica", "Arial", "sans-serif" }
+            }
+        }
+    };
+}

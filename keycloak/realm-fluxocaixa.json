@@ -1,0 +1,160 @@
+{
+  "realm": "fluxocaixa",
+  "displayName": "Fluxo de Caixa",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "verifyEmail": false,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "bruteForceProtected": true,
+  "failureFactor": 10,
+  "waitIncrementSeconds": 60,
+  "passwordPolicy": "length(8) and notUsername(undefined) and upperCase(1) and digits(1)",
+
+  "roles": {
+    "realm": [
+      {
+        "name": "comerciante",
+        "description": "Comerciante que registra lancamentos e consulta o proprio consolidado"
+      }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "fluxocaixa-api",
+      "name": "Fluxo de Caixa - API (resource server)",
+      "description": "Apenas alvo de audiencia. Nao inicia fluxo algum; a API so valida tokens.",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "fluxocaixa-web",
+      "name": "Fluxo de Caixa - Frontend (Blazor WASM)",
+      "description": "Cliente publico SPA. Authorization Code + PKCE S256. Sem client secret e sem ROPC.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://localhost:5010",
+      "baseUrl": "http://localhost:5010",
+      "redirectUris": [
+        "http://localhost:5010/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5010"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5010/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-fluxocaixa-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "fluxocaixa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "fluxocaixa-testes",
+      "name": "Fluxo de Caixa - Testes automatizados",
+      "description": "SOMENTE para testes de integracao e carga: usa direct grant (ROPC) para obter token sem browser. Nao deve existir em producao.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "audience-fluxocaixa-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "fluxocaixa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "username": "demo@loja.com",
+      "email": "demo@loja.com",
+      "firstName": "Comerciante",
+      "lastName": "Demo",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Senha123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["comerciante"]
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222222",
+      "username": "comerciante-a@teste.com",
+      "email": "comerciante-a@teste.com",
+      "firstName": "Comerciante",
+      "lastName": "A",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Senha123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["comerciante"]
+    },
+    {
+      "id": "33333333-3333-3333-3333-333333333333",
+      "username": "comerciante-b@teste.com",
+      "email": "comerciante-b@teste.com",
+      "firstName": "Comerciante",
+      "lastName": "B",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Senha123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["comerciante"]
+    }
+  ]
+}
