@@ -1,8 +1,13 @@
 services:
-  api:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Serviço de LANÇAMENTOS (core crítico). API REST + escrita no event store.
+  # Publica LancamentoRegistrado e segue disponível mesmo sem o worker — é o
+  # RNF do desafio garantido no nível de processo (ADR-15).
+  # ───────────────────────────────────────────────────────────────────────────
+  carrefour.ms.fluxodecaixa:
     build:
-      context: .
-      dockerfile: src/FluxoDeCaixa.Api/Dockerfile
+      # Contexto = raiz do "repositório" do serviço. Nada fora dele é usado.
+      context: ./services/carrefour.ms.fluxodecaixa
     ports:
       - "5000:8080"
     environment:
@@ -27,6 +32,39 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+      # NOTA: não há depends_on para o worker — de propósito. Fazer a API
+      # esperar a consolidação subir recriaria exatamente o acoplamento que o
+      # requisito não-funcional do desafio proíbe.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Worker de CONSOLIDAÇÃO. Consome a fila e materializa consolidado_diario.
+  # Sem superfície HTTP de negócio — apenas probes de saúde.
+  # Escala por profundidade de fila, não por RPS: por isso é um serviço próprio.
+  # ───────────────────────────────────────────────────────────────────────────
+  carrefour.wkr.consolidacao:
+    build:
+      context: ./services/carrefour.wkr.consolidacao
+    ports:
+      # Exposta apenas para inspeção das probes durante a avaliação.
+      # Em produção o worker não publica porta alguma.
+      - "5001:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__Marten=Host=postgres;Database=fluxodecaixa;Username=postgres;Password=postgres
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Username=guest
+      - RabbitMq__Password=guest
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/ready || exit 1"]
       interval: 10s
@@ -36,12 +74,11 @@ services:
 
   web:
     build:
-      context: .
-      dockerfile: src/FluxoDeCaixa.Web/Dockerfile
+      context: ./services/fluxodecaixa.web
     ports:
       - "5010:80"
     depends_on:
-      api:
+      carrefour.ms.fluxodecaixa:
         condition: service_healthy
 
   postgres:

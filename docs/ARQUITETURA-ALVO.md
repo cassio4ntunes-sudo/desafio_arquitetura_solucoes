@@ -71,7 +71,7 @@ graph TB
 | Contas AWS | Nenhuma (tudo local) | **Duas**: Share Enterprise e Domínio | Fronteira de conta espelha fronteira de *bounded context*; contém *blast radius* e atribui custo (ADR-12) |
 | Entrada | API exposta direto | **API Gateway** com mTLS e CA TrustStore | Ponto único de entrada; autentica o legado por certificado, não por segredo estático (ADR-14) |
 | Conectividade | Rede do Docker | **Transit Gateway** (entre contas) + **Direct Connect** (on-premises) | Tráfego de identidade e integração nunca passa pela internet pública (ADR-17) |
-| Deploy | Um processo (monólito modular) | **`MS.FluxoDeCaixa` + `WKR.FluxoDeCaixaConsolidacao`** independentes | Escalam por gatilhos diferentes: escrita por RPS, consolidação por lag da fila (ADR-15) |
+| Deploy | ✅ **Já separado**: `Carrefour.MS.FluxoDeCaixa` + `Carrefour.WKR.Consolidacao` (containers distintos) | Os mesmos dois serviços, em tasks ECS com autoscaling próprio | Escalam por gatilhos diferentes: escrita por RPS, consolidação por lag da fila (ADR-15) |
 | Banco | Uma instância PostgreSQL | RDS Multi-AZ + read replica para o consolidado | Falha de AZ não derruba o negócio; leitura de pico não compete com a escrita |
 | Broker | Container RabbitMQ único | Amazon MQ em cluster multi-AZ | O broker vira SPOF sem cluster |
 | Publicação de evento | Persist-then-publish (ADR-04) | **Outbox transacional** | Fecha a janela em que o evento é gravado e a publicação falha |

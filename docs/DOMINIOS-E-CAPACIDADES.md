@@ -117,7 +117,16 @@ O RNF do desafio — *"o serviço de controle de lançamento não deve ficar ind
 | Extrato (C4) | `FluxoDeCaixa.Application/Consultas` | Projeção de documentos do Marten |
 | Apresentação | `FluxoDeCaixa.Web` (Blazor WASM) | — |
 
-> **Nota honesta sobre o deploy atual:** os dois domínios core estão logicamente separados (projetos, contratos e armazenamentos distintos) mas rodam no **mesmo processo** — um monólito modular. O desacoplamento que o RNF exige é real, porque a comunicação já é assíncrona via broker: derrubar o consumer não derruba a escrita. Extrair a Consolidação para um serviço próprio é uma mudança de deploy, não de código — o caminho está em [ARQUITETURA-ALVO.md](ARQUITETURA-ALVO.md). Fiz essa escolha deliberadamente: separar processos no escopo do desafio adicionaria custo operacional sem provar nada que o broker já não prove.
+> **A fronteira de domínio virou fronteira de processo.** Os dois domínios core são hoje **serviços independentes**, com deploy, escala e ciclo de vida próprios:
+>
+> | Domínio | Serviço | Escala por |
+> |---|---|---|
+> | Lançamentos | `Carrefour.MS.FluxoDeCaixa` | Requisições por segundo |
+> | Consolidação | `Carrefour.WKR.Consolidacao` | Profundidade da fila |
+>
+> A comunicação entre eles é **exclusivamente** pelo evento `LancamentoRegistrado` no RabbitMQ — não há chamada direta, nem `depends_on` do MS para o worker no `compose.yaml`. Derrubar a consolidação não afeta o registro de lançamentos: as mensagens ficam retidas e são processadas quando ela volta, sem perda nem duplicação.
+>
+> Vale notar **por que** a separação existe: não era necessária para cumprir o RNF — a comunicação assíncrona já o cumpria. Ela existe porque os dois domínios escalam por gatilhos diferentes, e no mesmo processo escalar um inflaria o outro sem necessidade. Ver [ADR-15](../ARCHITECTURE.md#adr-15-separação-de-ms-e-wkr-em-serviços-com-deploy-independente).
 
 ---
 

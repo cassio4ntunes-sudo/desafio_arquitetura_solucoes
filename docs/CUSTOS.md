@@ -78,12 +78,12 @@ Para os primeiros meses, sem SLA formal. Mostra que a arquitetura não exige o a
 
 | Componente | Configuração | USD/mês |
 |---|---|---|
-| ECS Fargate | 1 task (API + consumer no mesmo processo, como hoje) | 18 |
+| ECS Fargate | 2 tasks mínimas (MS + WKR), sem autoscaling | 30 |
 | RDS `db.t4g.micro` single-AZ | 20 GB | 26 |
 | RabbitMQ em container no mesmo ECS | — | 9 |
 | Keycloak em container no mesmo ECS | — | 9 |
 | ALB + CloudWatch + S3/CloudFront | | 42 |
-| **Total** | | **≈ 104 USD/mês** |
+| **Total** | | **≈ 116 USD/mês** |
 
 O código não muda entre o Cenário 3 e o Cenário 1 — muda a topologia de deploy. É o retorno concreto de ter separado os domínios em projetos com contrato assíncrono desde o início.
 
@@ -125,7 +125,7 @@ O código não muda entre o Cenário 3 e o Cenário 1 — muda a topologia de de
 
 | Cenário | USD/mês | BRL/mês (≈ 5,50) |
 |---|---|---|
-| MVP enxuto | 104 | R$ 572 |
+| MVP enxuto | 116 | R$ 638 |
 | Homologação | 105 | R$ 578 |
 | Produção HA (tabela) | 702 | R$ 3.861 |
 | Produção HA (otimizada) | 485 | R$ 2.668 |

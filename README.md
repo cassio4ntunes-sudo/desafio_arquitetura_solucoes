@@ -23,9 +23,9 @@ Sistema de controle de fluxo de caixa diário para comerciantes, com registro de
 | Blazor WASM | 10.x | Frontend SPA (WebAssembly) |
 | MudBlazor | 7.x | Component library (Material Design) |
 | JWT Bearer | 10.x | Validação de token na API (resource server) |
-| Scalar | 2.x | OpenAPI UI sobre o gerador nativo do .NET 10 (`Microsoft.AspNetCore.OpenApi`) |
+| Microsoft.AspNetCore.OpenApi | 10.x | Geração nativa do documento OpenAPI (contrato em JSON, sem UI embarcada) |
 | nginx | alpine | Servidor web para Blazor WASM (Docker) |
-| Docker Compose | v2 | Orquestração local (5 containers) |
+| Docker Compose | v2 | Orquestração local (6 containers) |
 | xUnit | 2.x | Framework de testes |
 | FluentAssertions | 7.x | Asserções expressivas |
 | NSubstitute | 5.x | Mocking |
@@ -52,7 +52,7 @@ Web (Blazor WASM) ──OIDC/PKCE──→ Keycloak
 - **Application** — Commands, Queries, Handlers via MediatR. Validação via FluentValidation.
 - **Infrastructure** — Marten (Event Store), MassTransit (RabbitMQ), Serilog.
 - **Consolidação** — Consumer RabbitMQ + repositório Npgsql (tabela `consolidado_diario`).
-- **API** — Endpoints Minimal API + validação do token do Keycloak + Scalar OpenAPI UI + middleware. Não emite token nem guarda senha.
+- **API** — Endpoints Minimal API + validação do token do Keycloak + documento OpenAPI + middleware. Não emite token nem guarda senha.
 - **Web** — Blazor WebAssembly SPA com MudBlazor (Material Design).
 
 📐 Para diagramas C4, sequência e ADRs completos, veja [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -85,10 +85,11 @@ docker compose ps
 | Serviço | URL | Credenciais |
 |---|---|---|
 | **Frontend (Blazor)** | http://localhost:5010 | `demo@loja.com` / `Senha123!` (login pelo Keycloak) |
-| API REST | http://localhost:5000 | Bearer token emitido pelo Keycloak |
+| API REST (`carrefour.ms.fluxodecaixa`) | http://localhost:5000 | Bearer token emitido pelo Keycloak |
+| Worker (`carrefour.wkr.consolidacao`) | http://localhost:5001/health/ready | Só probes de saúde — sem endpoint de negócio |
 | **Keycloak** | http://localhost:8081 | Console admin: `admin` / `admin` |
 | Descoberta OIDC do realm | http://localhost:8081/realms/fluxocaixa/.well-known/openid-configuration | — |
-| Scalar (OpenAPI UI) | http://localhost:5000/scalar/v1 | — |
+| Documento OpenAPI | http://localhost:5000/openapi/v1.json | — |
 | Health (liveness / readiness) | http://localhost:5000/health/live · `/health/ready` | — |
 | RabbitMQ Management | http://localhost:15672 | guest / guest |
 | PostgreSQL | localhost:5433 | postgres / postgres |
@@ -281,10 +282,44 @@ dotnet test --filter "FullyQualifiedName~Tests.Unit|FullyQualifiedName~Tests.Int
 | Requisito | Teste |
 |---|---|
 | Lançamentos não caem se a consolidação cair (RNF do enunciado) | `Escrita_permanece_disponivel_independente_da_consolidacao` |
+| Serviços de fato separados (o MS não consome a fila) | `SeparacaoDeServicosTests` |
 | 50 req/s com ≤ 5% de perda (RNF do enunciado) | `Deve_suportar_50_requisicoes_por_segundo_por_2_minutos` |
 | Isolamento entre comerciantes | `Consolidado_de_um_comerciante_nao_vaza_para_outro` |
 | Reentrega de mensagem não duplica dinheiro | `Reentrega_do_mesmo_evento_nao_soma_duas_vezes` |
 | Endpoints de negócio exigem autenticação | `Deve_recusar_acesso_sem_token` |
+
+### Provando o RNF na prática — derrube a consolidação
+
+O requisito central do desafio pode ser verificado à mão em um minuto. Com o ambiente no ar:
+
+```bash
+# 1. Derruba SÓ o worker de consolidação
+docker compose stop carrefour.wkr.consolidacao
+
+# 2. Registre lançamentos — todos devem responder 201
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5000/lancamentos \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d "{\"valor\":10.00,\"tipo\":\"Credito\",\"data\":\"$(date -u +%F)\",\"descricao\":\"worker fora\",\"categoria\":\"Vendas\"}"
+
+# 3. As mensagens ficam retidas na fila
+docker compose exec rabbitmq rabbitmqctl list_queues name messages
+
+# 4. Religue — o acúmulo é processado
+docker compose start carrefour.wkr.consolidacao
+```
+
+Resultado observado nesta implementação:
+
+```
+worker parado    → POST /lancamentos ×5 = 201, 201, 201, 201, 201
+                   MS /health/ready     = 200
+                   fila LancamentoRegistrado = 5 mensagens retidas
+                   consolidado congelado em 16 lançamentos
+worker religado  → consolidado = 21 lançamentos (16 + 5)
+                   créditos 3350,75 → 3400,75  (+5 × 10,00)
+```
+
+**Nenhuma requisição perdida, nenhum valor duplicado.** A retenção é da fila; a ausência de duplicação vem do inbox de idempotência (ADR-10).
 
 ---
 
@@ -305,29 +340,40 @@ src/
 ├── FluxoDeCaixa.Infrastructure/      # Marten, MassTransit, Serilog
 │   ├── Persistencia/                 # MartenConfiguration, EventStore, QueryStore
 │   └── Mensageria/                   # MassTransitConfiguration, Publisher impl
-├── FluxoDeCaixa.Consolidacao/        # Consumer RabbitMQ + repositório consolidado
-│   ├── Consumidores/                 # LancamentoRegistradoConsumer
+├── FluxoDeCaixa.Consolidacao/        # Consumer + repositório do read model (biblioteca)
+│   ├── Consumidores/                 # LancamentoRegistradoConsumer (usado só pelo WKR)
 │   ├── Repositorios/                 # PostgresConsolidadoRepository (Npgsql)
-│   ├── Consultas/                    # ConsultarConsolidadoDiario
+│   ├── Consultas/                    # ConsultarConsolidadoDiario (usado só pelo MS)
 │   └── Modelos/                      # ConsolidadoDiario (read model)
-├── FluxoDeCaixa.Api/                 # Endpoints Minimal API + JWT Auth + Scalar
-│   ├── Auth/                         # UsuarioService (BCrypt + JWT)
-│   ├── Endpoints/                    # Auth, Lançamentos, Consolidado
+│
+│   ── SERVIÇOS (unidades de deploy) ──────────────────────────────────────
+│
+├── Carrefour.MS.FluxoDeCaixa/        # 🟦 Lançamentos: API REST + escrita + publicação
+│   ├── Endpoints/                    # Lançamentos, Consolidado (leitura), Metadados
 │   ├── DTOs/                         # Request/Response records
-│   └── Middleware/                   # CorrelationIdMiddleware
+│   ├── Extensoes/                    # ClaimsPrincipalExtensions (sub → ComercianteId)
+│   ├── Saude/                        # PostgresHealthCheck
+│   ├── Middleware/                   # CorrelationIdMiddleware
+│   └── Dockerfile
+├── Carrefour.WKR.Consolidacao/       # 🟦 Consolidação: consome a fila e materializa
+│   ├── Saude/                        # PostgresHealthCheck
+│   ├── Program.cs                    # MassTransit + consumer; sem endpoint de negócio
+│   └── Dockerfile
 └── FluxoDeCaixa.Web/                 # Frontend Blazor WebAssembly + MudBlazor
-    ├── Pages/                        # Login, Dashboard, Lançamentos
-    ├── Layout/                       # MainLayout (sidebar, appbar, auth state)
-    ├── Services/                     # AuthService, ApiClient, AuthDelegatingHandler
+    ├── Pages/                        # Dashboard, Lançamentos, Autenticacao (OIDC)
+    ├── Layout/                       # MainLayout (sidebar, appbar, AuthorizeView)
+    ├── Services/                     # ApiClient, ApiAuthorizationMessageHandler
     ├── Models/                       # DTOs client-side
     ├── Dockerfile                    # Multi-stage (SDK → nginx:alpine)
     └── nginx.conf                    # SPA routing + gzip
 
 tests/
-├── FluxoDeCaixa.Tests.Unit/          # Testes unitários (40 testes)
-├── FluxoDeCaixa.Tests.Integration/   # Testes E2E (Testcontainers)
+├── FluxoDeCaixa.Tests.Unit/          # Testes unitários (42 testes)
+├── FluxoDeCaixa.Tests.Integration/   # E2E com Testcontainers — hospeda MS e WKR separados
 └── FluxoDeCaixa.Tests.Load/          # Teste de carga (NBomber)
 ```
+
+> **Bibliotecas × serviços.** O prefixo `Carrefour.*` marca as duas unidades implantáveis; as bibliotecas mantêm `FluxoDeCaixa.*` porque não têm deploy próprio. O worker não referencia `FluxoDeCaixa.Infrastructure`: ele não toca no event store, então não arrasta o Marten.
 
 ---
 

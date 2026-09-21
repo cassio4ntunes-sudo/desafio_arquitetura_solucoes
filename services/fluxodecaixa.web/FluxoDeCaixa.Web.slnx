@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FluxoDeCaixa.Web/FluxoDeCaixa.Web.csproj" />
+  </Folder>
+</Solution>

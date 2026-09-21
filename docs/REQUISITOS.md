@@ -72,7 +72,7 @@ Plano completo de métricas, tracing e alertas em [OBSERVABILIDADE.md](OBSERVABI
 |---|---|---|---|
 | **RNF-17** | Domínio isolado de infraestrutura | Zero dependência externa no projeto Domain | Clean Architecture; `FluxoDeCaixa.Domain` sem PackageReference |
 | **RNF-18** | Build e testes automatizados | CI verde a cada push | GitHub Actions: build, unit, integração (Testcontainers) e smoke E2E |
-| **RNF-19** | Subir o ambiente em um comando | `docker compose up` | 5 containers com healthcheck e ordenação por dependência |
+| **RNF-19** | Subir o ambiente em um comando | `docker compose up` | 6 containers com healthcheck e ordenação por dependência |
 
 ---
 

@@ -22,14 +22,15 @@ graph TB
 
 ## Diagrama de Containers (C4 — Container)
 
-O sistema roda em 5 containers Docker orquestrados via Docker Compose:
+O sistema roda em 6 containers Docker orquestrados via Docker Compose:
 
 ```mermaid
 graph TB
     subgraph "Docker Compose"
         Web["Web<br/>Blazor WASM + nginx<br/>:5010"]
         KC["Keycloak 26<br/>Identity Provider<br/>:8081"]
-        API["API<br/>ASP.NET Core 10<br/>:5000"]
+        MS["Carrefour.MS.FluxoDeCaixa<br/>API REST — recebe HTTP,<br/>grava o evento e publica<br/>:5000"]
+        WKR["Carrefour.WKR.Consolidacao<br/>worker — consome a fila<br/>e materializa o read model<br/>:5001 (só health)"]
         PG["PostgreSQL 16<br/>Event Store +<br/>Consolidado<br/>:5433"]
         RMQ["RabbitMQ 3<br/>Message Broker<br/>:5672"]
     end
@@ -37,22 +38,28 @@ graph TB
     Comerciante["👤 Comerciante"] -->|"Browser"| Web
     Comerciante -->|"login (senha só aqui)"| KC
     Web -->|"Authorization Code + PKCE"| KC
-    Web -->|"HTTP + Bearer token"| API
-    API -->|"busca chave pública<br/>(JWKS)"| KC
-    API -->|"Event Sourcing<br/>(Marten)"| PG
-    API -->|"Publish<br/>LancamentoRegistrado"| RMQ
-    RMQ -->|"Consume"| API
-    API -->|"Upsert<br/>consolidado_diario"| PG
+    Web -->|"HTTP + Bearer token"| MS
+    MS -->|"busca chave pública<br/>(JWKS)"| KC
+    MS -->|"Event Sourcing<br/>(Marten)"| PG
+    MS -->|"Publish LancamentoRegistrado<br/>(exchange do tipo)"| RMQ
+    MS -->|"lê consolidado_diario"| PG
+    RMQ -->|"Consume da fila<br/>lancamento-registrado"| WKR
+    WKR -->|"Upsert idempotente<br/>consolidado_diario"| PG
 
     style KC fill:#8b5a00,color:#fff
+    style MS fill:#0d3b66,color:#fff
+    style WKR fill:#0d3b66,color:#fff
 ```
+
+> **Dois processos, de propósito (ADR-15).** O MS publica e o WKR consome — não há chamada direta entre eles. Derrubar o worker não afeta o registro de lançamentos: as mensagens ficam retidas na fila e são processadas quando ele volta. É o requisito não-funcional do desafio garantido pela topologia, não apenas pelo protocolo.
 
 **Detalhes dos containers:**
 
 | Container | Imagem | Porta | Função |
 |---|---|---|---|
 | `web` | Build local (Dockerfile) | 5010:80 | Blazor WASM SPA servido por nginx |
-| `api` | Build local (Dockerfile) | 5000:8080 | API REST + Consumer RabbitMQ |
+| `carrefour.ms.fluxodecaixa` | Build local (Dockerfile) | 5000:8080 | API REST + escrita no event store + publicação do evento |
+| `carrefour.wkr.consolidacao` | Build local (Dockerfile) | 5001:8080 | Worker que consome a fila e materializa o consolidado (só probes de saúde) |
 | `keycloak` | quay.io/keycloak/keycloak:26.0 | 8081:8080 | Identity Provider — realm importado de `keycloak/realm-fluxocaixa.json` |
 | `postgres` | postgres:16-alpine | 5433:5432 | Event Store (Marten) + Tabela consolidado_diario |
 | `rabbitmq` | rabbitmq:3-management | 5672 + 15672 | Broker de mensagens + Management UI |
@@ -65,30 +72,48 @@ graph TB
 
 As dependências fluem de fora para dentro. A camada Domain não depende de nada externo.
 
+O diagrama separa **bibliotecas** (sem deploy próprio) de **unidades de deploy** (ADR-15). Cada serviço referencia só o que usa: o worker não conhece a Infrastructure, e o MS usa a Consolidação apenas do lado da leitura.
+
 ```mermaid
 graph LR
-    subgraph "Camadas"
-        Domain["Domain<br/>Eventos, VOs,<br/>Agregados"]
+    subgraph Deploy["Unidades de deploy"]
+        Web["FluxoDeCaixa.Web<br/>Blazor WASM,<br/>MudBlazor"]
+        MS["Carrefour.MS.FluxoDeCaixa<br/>Endpoints, Middleware,<br/>OpenAPI, JwtBearer"]
+        WKR["Carrefour.WKR.Consolidacao<br/>Host do consumer,<br/>health probes"]
+    end
+
+    subgraph Libs["Bibliotecas (compartilhadas)"]
         Application["Application<br/>Commands, Queries,<br/>Handlers (MediatR)"]
         Infrastructure["Infrastructure<br/>Marten, MassTransit,<br/>Serilog"]
         Consolidacao["Consolidação<br/>Consumer, Repository<br/>(Npgsql)"]
-        Api["API<br/>Endpoints, Middleware,<br/>Scalar"]
-        Web["Web<br/>Blazor WASM,<br/>MudBlazor"]
+        Domain["Domain<br/>Eventos, VOs,<br/>Agregados"]
     end
 
-    Web --> Api
-    Api --> Application
-    Api --> Infrastructure
-    Api --> Consolidacao
+    Web -->|"HTTP + Bearer"| MS
+
+    MS --> Application
+    MS --> Infrastructure
+    MS -.->|"só leitura<br/>do read model"| Consolidacao
+
+    WKR -->|"escrita<br/>do read model"| Consolidacao
+
     Infrastructure --> Application
     Infrastructure --> Domain
     Application --> Domain
     Consolidacao --> Domain
+
+    style MS fill:#0d3b66,color:#fff
+    style WKR fill:#0d3b66,color:#fff
+    style Domain fill:#1b4332,color:#fff
 ```
 
-> **As setas indicam dependência.** Domain não depende de nada (camada mais interna). Web é a camada de apresentação (SPA) que consome a API via HTTP. API compõe todas as demais no `Program.cs`.
+> **As setas indicam dependência, não chamada.** Domain não depende de nada (camada mais interna). Não há seta entre MS e WKR: os dois processos só se encontram através do RabbitMQ, e nenhum referencia o assembly do outro.
+>
+> A seta tracejada do MS para a Consolidação é deliberadamente estreita — o MS usa apenas o repositório de **consulta** (`GET /consolidado/diario`). Quem **escreve** em `consolidado_diario` é exclusivamente o worker. Essa assimetria é o CQRS aparecendo na topologia: um processo escreve o read model, outro o lê.
 
 ### Mapeamento para projetos .NET
+
+**Bibliotecas** (compartilhadas, sem deploy próprio):
 
 | Camada | Projeto | Dependências NuGet |
 |---|---|---|
@@ -96,8 +121,18 @@ graph LR
 | Application | `FluxoDeCaixa.Application` | MediatR, FluentValidation |
 | Infrastructure | `FluxoDeCaixa.Infrastructure` | Marten, MassTransit.RabbitMQ, Serilog |
 | Consolidação | `FluxoDeCaixa.Consolidacao` | Npgsql, MassTransit |
-| API | `FluxoDeCaixa.Api` | Scalar.AspNetCore, Microsoft.AspNetCore.OpenApi, Microsoft.AspNetCore.Authentication.JwtBearer, Npgsql |
-| Web | `FluxoDeCaixa.Web` | MudBlazor, Microsoft.AspNetCore.Components.WebAssembly(.Authentication) |
+
+**Serviços** (unidades de deploy — ADR-15):
+
+| Serviço | Projeto | Referencia | Dependências NuGet |
+|---|---|---|---|
+| Lançamentos | `Carrefour.MS.FluxoDeCaixa` | Domain, Application, Infrastructure, Consolidação *(só leitura)* | Microsoft.AspNetCore.OpenApi, JwtBearer, Npgsql |
+| Consolidação | `Carrefour.WKR.Consolidacao` | Domain, Consolidação | MassTransit.RabbitMQ, Npgsql, Serilog |
+| Apresentação | `FluxoDeCaixa.Web` | — | MudBlazor, Components.WebAssembly(.Authentication) |
+
+> O worker **não referencia** `FluxoDeCaixa.Infrastructure`: ele não toca no event store, só materializa o read model. Arrastar a Infrastructure traria o Marten junto — uma dependência que esse processo jamais usa. O grafo de dependências de cada serviço é exatamente o que ele precisa.
+
+> As bibliotecas mantiveram o prefixo `FluxoDeCaixa.*` porque não são serviços; o prefixo `Carrefour.*` identifica as unidades implantáveis.
 
 ---
 
@@ -110,13 +145,13 @@ sequenceDiagram
     participant C as Comerciante
     participant Web as Blazor WASM
     participant KC as Keycloak
-    participant API as API
+    participant API as Carrefour.MS.FluxoDeCaixa
     participant JWT as JwtBearer
     participant MediatR
     participant Marten as Marten (PostgreSQL)
     participant MT as MassTransit
     participant RMQ as RabbitMQ
-    participant Consumer as LancamentoRegistradoConsumer
+    participant Consumer as WKR · LancamentoRegistradoConsumer
     participant Repo as PostgresConsolidadoRepository
 
     Note over C,KC: Autenticação — Authorization Code + PKCE
@@ -137,20 +172,20 @@ sequenceDiagram
     MediatR->>Marten: StartStream + Append Event
     Marten-->>MediatR: OK
     MediatR->>MT: Publish(LancamentoRegistrado)
-    MT->>RMQ: Publish to queue
+    MT->>RMQ: Publish no exchange do tipo (fanout)
     MediatR-->>API: Return LancamentoId
     API-->>C: 201 Created {id}
 
-    Note over RMQ,Consumer: Assíncrono
-    RMQ->>Consumer: Deliver message
+    Note over RMQ,Consumer: Assíncrono — outro processo, outra unidade de deploy
+    RMQ->>Consumer: Entrega pela fila lancamento-registrado
     Consumer->>Repo: UpsertAsync(evento)
     Repo->>Marten: SQL INSERT/UPDATE consolidado_diario
 ```
 
 **Padrão Persist-then-Publish:**
 1. Marten persiste o evento no PostgreSQL (source of truth)
-2. MassTransit publica no RabbitMQ (best-effort)
-3. Consumer processa de forma assíncrona e atualiza `consolidado_diario`
+2. MassTransit publica no exchange do tipo `LancamentoRegistrado` no RabbitMQ (best-effort). O `Publish` não endereça fila nem serviço: quem cria a fila `lancamento-registrado` e a liga a esse exchange é o próprio worker, no `ConfigureEndpoints`
+3. O `Carrefour.WKR.Consolidacao` consome dessa fila, em outro processo, e faz upsert idempotente em `consolidado_diario`. Com o worker fora do ar as mensagens ficam retidas na fila durável — o `POST /lancamentos` continua respondendo 201
 
 ---
 
@@ -161,10 +196,10 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant C as Comerciante
-    participant API as API
+    participant API as Carrefour.MS.FluxoDeCaixa
     participant MediatR
     participant Repo as PostgresConsolidadoRepository
-    participant PG as PostgreSQL
+    participant PG as PostgreSQL (read model)
 
     C->>API: GET /consolidado/diario?data=2026-04-14
     API->>MediatR: Send(ConsultarConsolidadoDiario)
@@ -177,8 +212,9 @@ sequenceDiagram
 ```
 
 **Separação de leitura e escrita (CQRS):**
-- Escrita: Event Sourcing via Marten (append-only)
-- Leitura: Tabela `consolidado_diario` com Npgsql (SELECT por chave primária)
+- Escrita: Event Sourcing via Marten (append-only), no `Carrefour.MS.FluxoDeCaixa`
+- Leitura: Tabela `consolidado_diario` com Npgsql (SELECT por chave primária), também servida pelo MS
+- Quem **popula** essa tabela é o `Carrefour.WKR.Consolidacao`, fora deste fluxo. A consulta não depende do worker estar de pé: ela lê a última versão materializada. Se o worker estiver atrasado, o saldo fica temporariamente defasado — consistência eventual, assumida no ADR-04 — mas a consulta nunca falha por causa dele
 
 **Isolamento multi-inquilino:** o `ComercianteId` vem da claim `sub` do JWT e nunca do body ou da query string. A chave primária `(comerciante_id, data)` garante o isolamento no nível do schema — ver ADR-03.
 
@@ -375,15 +411,40 @@ Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`.
 
 ### ADR-15: Separação de MS e WKR em serviços com deploy independente
 
-- **Status:** Proposta (arquitetura alvo) — *concretiza a nota de monólito modular em [DOMINIOS-E-CAPACIDADES.md](docs/DOMINIOS-E-CAPACIDADES.md#4-da-fronteira-de-domínio-à-fronteira-de-serviço)*
-- **Contexto:** Hoje API e consumer rodam no mesmo processo. O RNF do desafio já é cumprido — a comunicação é assíncrona, então derrubar o consumer não derruba a escrita. Mas os dois têm **gatilhos de escala diferentes**: a escrita escala por RPS, a consolidação por profundidade de fila. No mesmo processo, escalar um infla o outro sem necessidade.
-- **Decisão:** Separar em `Carrefour.MS.FluxoDeCaixa` (API + escrita) e `Carrefour.WKR.FluxoDeCaixaConsolidacao` (worker de consolidação), com deploy, escala e ciclo de vida próprios. Ambos escrevem no mesmo PostgreSQL, em tabelas distintas.
+- **Status:** ✅ **Implementada** — *concretiza a nota de monólito modular em [DOMINIOS-E-CAPACIDADES.md](docs/DOMINIOS-E-CAPACIDADES.md#4-da-fronteira-de-domínio-à-fronteira-de-serviço)*
+- **Contexto:** Antes, API e consumer rodavam no mesmo processo. O RNF do desafio já era cumprido — a comunicação é assíncrona, então derrubar o consumer não derrubava a escrita. Mas os dois têm **gatilhos de escala diferentes**: a escrita escala por RPS, a consolidação por profundidade de fila. No mesmo processo, escalar um infla o outro sem necessidade. E a garantia do RNF dependia apenas do protocolo, não da topologia.
+- **Decisão:** Dois hosts com deploy, escala e ciclo de vida próprios:
+
+  | Serviço | Papel | Superfície |
+  |---|---|---|
+  | `Carrefour.MS.FluxoDeCaixa` | API REST, escrita no event store, **publica** `LancamentoRegistrado`, **lê** o consolidado | HTTP `:5000` |
+  | `Carrefour.WKR.Consolidacao` | **Consome** a fila e materializa `consolidado_diario` | Apenas probes de saúde `:5001` |
+
+  O registro no contêiner de DI virou granular (`AddConsolidadoRepositorio`, `AddConsolidadoConsultas`): cada serviço compõe só o que usa. O MS **não registra consumer algum**. O worker **não referencia** `FluxoDeCaixa.Infrastructure` — não toca no event store, então não arrasta Marten.
+
 - **Consequências:**
-  - ✅ Escala independente por métrica adequada a cada um
-  - ✅ Falha ou deploy do worker não interrompe o registro de lançamentos — o RNF passa a ser garantido também no nível de processo, não só de protocolo
-  - ✅ **É mudança de topologia, não de código** — os projetos `.Consolidacao` e `.Application` já estão separados com contrato assíncrono entre eles
+  - ✅ Escala independente pela métrica adequada a cada um
+  - ✅ Falha ou deploy do worker **não interrompe** o registro de lançamentos — o RNF passa a valer no nível de processo, não só de protocolo
+  - ✅ Foi mudança de topologia, não de domínio: nenhuma regra de negócio mudou
+  - ✅ O `compose.yaml` **não** tem `depends_on` do MS para o worker — fazê-lo recriaria o acoplamento proibido
   - ⚠️ Dois artefatos para versionar, implantar e observar
-  - ⚠️ O contrato do evento `LancamentoRegistrado` passa a ser de fato entre processos: mudanças exigem compatibilidade retroativa
+  - ⚠️ O contrato do evento `LancamentoRegistrado` agora é de fato entre processos: mudanças exigem compatibilidade retroativa
+  - ⚠️ O DDL idempotente roda nos dois hosts, porque o MS não pode esperar o worker para subir (em produção vira step de migrations)
+
+- **Verificação operacional** — com o ambiente no ar, derrubando o worker:
+
+  ```
+  worker parado          → POST /lancamentos ×5  = 201, 201, 201, 201, 201
+                           MS /health/ready      = 200
+                           fila LancamentoRegistrado = 5 mensagens retidas
+                           consolidado congelado em 16 lançamentos
+  worker religado        → consolidado = 21 lançamentos (16 + 5)
+                           créditos 3350,75 → 3400,75  (+5 × 10,00)
+  ```
+
+  Nenhuma requisição foi perdida e nenhum valor foi duplicado — a retenção é da fila e a idempotência é do ADR-10.
+
+- **Verificado por:** `SeparacaoDeServicosTests` — falha se alguém registrar o consumer no serviço de lançamentos "para simplificar", que é como esse acoplamento voltaria sem quebrar nenhum outro teste.
 
 ### ADR-16: Credenciais em AWS Secrets Manager
 

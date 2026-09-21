@@ -1,0 +1,11 @@
+# Artefatos de build local não podem entrar na imagem: sobrescreveriam o
+# restore feito dentro do container e quebrariam o publish --no-restore.
+**/bin/
+**/obj/
+
+# Não fazem parte da imagem
+**/.vs/
+**/.vscode/
+**/*.user
+tests/
+README.md

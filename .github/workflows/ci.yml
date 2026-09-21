@@ -1,5 +1,10 @@
 name: "CI — Fluxo de Caixa"
 
+# Em multi-repo real, cada serviço teria seu próprio arquivo de workflow no seu
+# próprio repositório. Aqui os três coexistem em jobs independentes, com
+# `paths` filtrando o que cada um observa — o efeito prático é o mesmo:
+# mudar o worker não dispara o build do serviço de lançamentos.
+
 on:
   push:
     branches: [main]
@@ -7,12 +12,16 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
+  # ───────────────────────────────────────────────────────────────────────────
+  carrefour-ms-fluxodecaixa:
+    name: "MS · Lançamentos"
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/carrefour.ms.fluxodecaixa
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup .NET 10 SDK
         uses: actions/setup-dotnet@v4
@@ -20,70 +29,169 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Restore
-        run: dotnet restore FluxoDeCaixa.sln
+        run: dotnet restore
 
       - name: Build
-        run: dotnet build FluxoDeCaixa.sln --no-restore -c Release
+        run: dotnet build --no-restore -c Release
 
       - name: Unit Tests
         run: >
-          dotnet test tests/FluxoDeCaixa.Tests.Unit
+          dotnet test tests/Carrefour.MS.FluxoDeCaixa.Tests.Unit
           --no-build -c Release
-          --logger "trx;LogFileName=unit-tests.trx"
+          --logger "trx;LogFileName=ms-unit.trx"
 
-      # Os testes de integração sobem PostgreSQL e RabbitMQ via Testcontainers
-      # (o runner do GitHub já tem Docker), então não há services: declarados.
+      # Sobe PostgreSQL, RabbitMQ e Keycloak via Testcontainers.
+      # O worker NÃO participa: tudo aqui passa com a consolidação ausente.
       - name: Integration Tests
         run: >
-          dotnet test tests/FluxoDeCaixa.Tests.Integration
+          dotnet test tests/Carrefour.MS.FluxoDeCaixa.Tests.Integration
           --no-build -c Release
-          --logger "trx;LogFileName=integration-tests.trx"
+          --logger "trx;LogFileName=ms-integration.trx"
 
-      - name: Upload Test Results
+      - name: Vulnerabilidades em dependências
+        run: dotnet list package --vulnerable --include-transitive
+
+      - name: Build da imagem
+        run: docker build -t carrefour-ms-fluxodecaixa .
+
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: ms-test-results
           path: "**/TestResults/*.trx"
 
-  docker-build:
+  # ───────────────────────────────────────────────────────────────────────────
+  carrefour-wkr-consolidacao:
+    name: "WKR · Consolidação"
     runs-on: ubuntu-latest
-    needs: build-and-test
+    defaults:
+      run:
+        working-directory: services/carrefour.wkr.consolidacao
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Build API Image
-        run: docker build -t fluxo-api -f src/FluxoDeCaixa.Api/Dockerfile .
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
 
-      - name: Build Web Image
-        run: docker build -t fluxo-web -f src/FluxoDeCaixa.Web/Dockerfile .
+      - name: Restore
+        run: dotnet restore
 
-      - name: Smoke Test (Docker Compose)
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      # Publica no barramento e verifica a materialização do read model,
+      # sem envolver o serviço de lançamentos.
+      - name: Tests
+        run: >
+          dotnet test --no-build -c Release
+          --logger "trx;LogFileName=wkr.trx"
+
+      - name: Vulnerabilidades em dependências
+        run: dotnet list package --vulnerable --include-transitive
+
+      - name: Build da imagem
+        run: docker build -t carrefour-wkr-consolidacao .
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wkr-test-results
+          path: "**/TestResults/*.trx"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  fluxodecaixa-web:
+    name: "Web · Frontend"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/fluxodecaixa.web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Build da imagem
+        run: docker build -t fluxodecaixa-web .
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Integração entre serviços — o único job que conhece todos eles.
+  e2e:
+    name: "E2E · Ambiente completo"
+    runs-on: ubuntu-latest
+    needs: [carrefour-ms-fluxodecaixa, carrefour-wkr-consolidacao, fluxodecaixa-web]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sobe o ambiente
+        run: docker compose up -d --build --wait
+
+      - name: Smoke test autenticado
         run: |
           set -euo pipefail
-          docker compose up -d --wait
-          # A API só fica healthy quando /health/ready responde 200
           curl -fsS http://localhost:5000/health/ready
-          curl -fsS http://localhost:5000/auth/categorias
-          # O realm do Keycloak precisa ter sido importado
+          curl -fsS http://localhost:5001/health/ready
           curl -fsS http://localhost:8081/realms/fluxocaixa/.well-known/openid-configuration > /dev/null
-          # Fluxo autenticado ponta a ponta com token real do IdP
+
           TOKEN=$(curl -fsS -X POST \
             http://localhost:8081/realms/fluxocaixa/protocol/openid-connect/token \
-            -d 'client_id=fluxocaixa-testes' \
-            -d 'grant_type=password' \
-            -d 'username=demo@loja.com' \
-            -d 'password=Senha123!' | jq -r .access_token)
+            -d 'client_id=fluxocaixa-testes' -d 'grant_type=password' \
+            -d 'username=demo@loja.com' -d 'password=Senha123!' | jq -r .access_token)
           test -n "$TOKEN" && test "$TOKEN" != "null"
-          curl -fsS "http://localhost:5000/consolidado/diario?data=$(date -u +%F)" \
-            -H "Authorization: Bearer $TOKEN"
-          # Sem token o endpoint precisa recusar
+
+          # Sem token, recusa
           test "$(curl -s -o /dev/null -w '%{http_code}' \
             "http://localhost:5000/consolidado/diario?data=$(date -u +%F)")" = "401"
 
-      - name: Compose Logs (on failure)
+          # Fluxo completo: lançamento no MS, consolidação pelo WKR
+          HOJE=$(date -u +%F)
+          ANTES=$(curl -fsS "http://localhost:5000/consolidado/diario?data=$HOJE" \
+            -H "Authorization: Bearer $TOKEN" | jq -r .quantidadeLancamentos)
+
+          curl -fsS -X POST http://localhost:5000/lancamentos \
+            -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+            -d "{\"valor\":10.00,\"tipo\":\"Credito\",\"data\":\"$HOJE\",\"descricao\":\"ci\",\"categoria\":\"Vendas\"}"
+
+          sleep 5
+          DEPOIS=$(curl -fsS "http://localhost:5000/consolidado/diario?data=$HOJE" \
+            -H "Authorization: Bearer $TOKEN" | jq -r .quantidadeLancamentos)
+          test "$DEPOIS" -eq "$((ANTES + 1))"
+
+      # O requisito não-funcional do enunciado, verificado no pipeline.
+      - name: "RNF — lançamentos sobrevivem à queda da consolidação"
+        run: |
+          set -euo pipefail
+          TOKEN=$(curl -fsS -X POST \
+            http://localhost:8081/realms/fluxocaixa/protocol/openid-connect/token \
+            -d 'client_id=fluxocaixa-testes' -d 'grant_type=password' \
+            -d 'username=demo@loja.com' -d 'password=Senha123!' | jq -r .access_token)
+
+          docker compose stop carrefour.wkr.consolidacao
+
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:5000/lancamentos \
+              -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+              -d "{\"valor\":10.00,\"tipo\":\"Credito\",\"data\":\"$(date -u +%F)\",\"descricao\":\"sem worker $i\",\"categoria\":\"Vendas\"}")
+            test "$CODE" = "201"
+          done
+
+          curl -fsS http://localhost:5000/health/ready
+          docker compose start carrefour.wkr.consolidacao
+
+      - name: Logs (em caso de falha)
         if: failure()
         run: docker compose logs --no-color
 

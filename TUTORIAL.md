@@ -383,16 +383,20 @@ Para comprovar isso:
 
 ---
 
-### Passo 11: Explorar OpenAPI (Documentação Interativa)
+### Passo 11: Explorar o contrato OpenAPI
 
-A API possui documentação interativa gerada automaticamente:
+A API publica seu contrato OpenAPI gerado automaticamente a partir dos endpoints:
 
-1. Abra no navegador: **http://localhost:5000/scalar/v1**
-2. Explore todos os endpoints disponíveis.
-3. Teste chamadas diretamente pela interface — clique em "Try it" em qualquer endpoint.
-4. Consulte os schemas de request/response para cada operação.
+1. Baixe o documento: **http://localhost:5000/openapi/v1.json**
+2. Inspecione os endpoints e os schemas de request/response:
 
-> 💡 O Scalar é uma alternativa moderna ao Swagger UI, com interface mais limpa e suporte a temas.
+```bash
+curl -s http://localhost:5000/openapi/v1.json | jq ".paths | keys"
+```
+
+3. Para navegar visualmente ou disparar chamadas, importe esse JSON em qualquer cliente OpenAPI — Postman, Insomnia, Bruno ou a extensão REST Client do VS Code.
+
+> 💡 A API serve o **contrato**, não uma UI. A geração é nativa do .NET 10 (`Microsoft.AspNetCore.OpenApi`), sem pacote de interface embarcado — o que mantém a superfície HTTP do serviço restrita a endpoints de negócio e health.
 
 ---
 
@@ -566,7 +570,7 @@ docker compose down -v
 |---|---|
 | Interface Web | http://localhost:5010 |
 | API REST | http://localhost:5000 |
-| Documentação OpenAPI (Scalar) | http://localhost:5000/scalar/v1 |
+| Contrato OpenAPI (JSON) | http://localhost:5000/openapi/v1.json |
 | Painel RabbitMQ | http://localhost:15672 (guest/guest) |
 | Console do Keycloak | http://localhost:8081 (admin/admin) |
 | Health / readiness | http://localhost:5000/health/ready |
