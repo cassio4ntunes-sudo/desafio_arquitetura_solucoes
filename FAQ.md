@@ -112,9 +112,7 @@ A API é **stateless** (valida o token por chave pública, sem sessão), permiti
 
 ### 19. Arquitetura de transição para sistemas legados?
 
-Adotamos **Strangler Fig** em três fases: (1) coexistência, com CDC replicando o legado e uma **Anti-Corruption Layer** traduzindo para o evento `LancamentoRegistrado` — o consolidado novo roda em shadow e é comparado diariamente; (2) inversão da escrita por canário, com sincronismo reverso enquanto houver periférico lendo do legado; (3) desativação. Cada fase tem critério de avanço e de rollback definidos.
-
-📄 Diagramas por fase, critérios e prazos em **[docs/ARQUITETURA-ALVO.md](docs/ARQUITETURA-ALVO.md#2-arquitetura-de-transição)**.
+Adotamos **Strangler Fig** em três fases: (1) coexistência, com CDC replicando o legado e uma **Anti-Corruption Layer** traduzindo para o evento `LancamentoRegistrado` — o consolidado novo roda em shadow e é comparado diariamente; (2) inversão da escrita por canário, com sincronismo reverso enquanto houver periférico lendo do legado; (3) desativação. Cada avanço de fase é condicionado a uma verificação objetiva — divergência do consolidado em shadow dentro do limite acordado, antes de inverter a escrita — e cada fase mantém caminho de rollback enquanto o legado seguir de pé.
 
 ### 20. Estimativa de custos em cloud?
 

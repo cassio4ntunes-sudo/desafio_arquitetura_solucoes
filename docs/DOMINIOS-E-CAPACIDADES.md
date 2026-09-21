@@ -92,7 +92,7 @@ graph TB
 | Identidade → Lançamentos / Consolidação | **Conformist** | Os dois consomem o `ComercianteId` da claim `sub` sem traduzir. O contrato do token é simples e estável |
 | Lançamentos → Consolidação | **Published Language** (evento) + **Customer/Supplier** | O evento `LancamentoRegistrado` é o contrato publicado. Consolidação assina; **nunca** consulta Lançamentos de forma síncrona — é essa escolha que cumpre o RNF de disponibilidade |
 
-> **Anti-Corruption Layer:** não há ACL hoje porque não há legado a integrar. É exatamente onde ela entraria na arquitetura de transição — ver [ARQUITETURA-ALVO.md](ARQUITETURA-ALVO.md#2-arquitetura-de-transição).
+> **Anti-Corruption Layer:** não há ACL porque não há legado a integrar. Ela entraria no ponto em que um sistema legado passasse a alimentar o domínio, traduzindo o modelo antigo para o evento `LancamentoRegistrado` sem deixar o vocabulário do legado vazar para dentro da fronteira.
 
 ---
 

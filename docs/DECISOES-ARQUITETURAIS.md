@@ -150,7 +150,7 @@ Mapeamento direto entre os componentes do diagrama e os ADRs que os justificam:
 | `Carrefour.SecretsManager.FluxoDeCaixa` | ADR-11, ADR-16 | Nenhuma credencial em código ou variável de ambiente |
 | `Transit Gateway` / `Direct Connect` | ADR-17 | Tráfego de identidade e integração fora da internet pública |
 | **Observabilidade** (ambas as contas) | — | Ver [OBSERVABILIDADE.md](OBSERVABILIDADE.md) |
-| `Legado` (on-premises) | ADR-14 | Consumidor externo autenticado por mTLS; ver [arquitetura de transição](ARQUITETURA-ALVO.md#2-arquitetura-de-transição) |
+| `Legado` (on-premises) | ADR-14 | Consumidor externo autenticado por mTLS, alcançado por Direct Connect (ADR-17) |
 
 ---
 
@@ -165,7 +165,6 @@ Mapeamento direto entre os componentes do diagrama e os ADRs que os justificam:
 | Mapeamento de domínios e capacidades | — | [DOMINIOS-E-CAPACIDADES.md](DOMINIOS-E-CAPACIDADES.md) |
 | Arquitetura alvo | ADR-12 a ADR-17 | [ARQUITETURA-ALVO.md](ARQUITETURA-ALVO.md) |
 | Topologia de serviços | ADR-15, ADR-18 | [ARCHITECTURE.md](../ARCHITECTURE.md#decisões-da-arquitetura-alvo-e-da-topologia-de-serviços-adr-12-a-adr-18) |
-| Arquitetura de transição | ADR-14, ADR-17 | [ARQUITETURA-ALVO.md](ARQUITETURA-ALVO.md#2-arquitetura-de-transição) |
 | Estimativa de custos | ADR-12, ADR-15, ADR-16 | [CUSTOS.md](CUSTOS.md) |
 | Observabilidade | — | [OBSERVABILIDADE.md](OBSERVABILIDADE.md) |
 | **Critérios de segurança para integração** | **ADR-14**, ADR-07, ADR-16 | [SEGURANCA.md](SEGURANCA.md) |

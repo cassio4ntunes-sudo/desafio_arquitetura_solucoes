@@ -492,7 +492,7 @@ Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`.
 - **Decisão:** **Transit Gateway** para o tráfego entre as contas (domínio ↔ share), e **Direct Connect** para o enlace com o data center on-premises. Nenhum componente interno recebe IP público: o único ponto de entrada é o API Gateway.
 - **Consequências:**
   - ✅ Tráfego de identidade e de integração nunca transita pela internet
-  - ✅ Latência previsível no Direct Connect — relevante para o sincronismo reverso da [arquitetura de transição](docs/ARQUITETURA-ALVO.md#2-arquitetura-de-transição)
+  - ✅ Latência previsível no Direct Connect — relevante para integrações síncronas com o legado on-premises
   - ✅ Topologia hub-and-spoke: novos domínios se conectam sem malha de peering
   - ⚠️ Direct Connect tem custo fixo e prazo de provisionamento em semanas — precisa entrar cedo no cronograma
   - ⚠️ Transit Gateway cobra por anexo e por GB processado
@@ -586,7 +586,7 @@ dotnet test tests/FluxoDeCaixa.Tests.Load
 | [docs/DECISOES-ARQUITETURAIS.md](docs/DECISOES-ARQUITETURAIS.md) | **Mapa das decisões** — como os ADRs acima se encadeiam e se sustentam |
 | [docs/DOMINIOS-E-CAPACIDADES.md](docs/DOMINIOS-E-CAPACIDADES.md) | Domínios funcionais, capacidades de negócio e bounded contexts |
 | [docs/REQUISITOS.md](docs/REQUISITOS.md) | Requisitos funcionais e não funcionais refinados |
-| [docs/ARQUITETURA-ALVO.md](docs/ARQUITETURA-ALVO.md) | Arquitetura alvo em nuvem e arquitetura de transição |
+| [docs/ARQUITETURA-ALVO.md](docs/ARQUITETURA-ALVO.md) | Arquitetura alvo em nuvem, dimensionamento e evolução por horizonte |
 | [docs/CUSTOS.md](docs/CUSTOS.md) | Estimativa de custos de infraestrutura e licenças |
 | [docs/OBSERVABILIDADE.md](docs/OBSERVABILIDADE.md) | Métricas, SLIs/SLOs, alertas e painéis |
 | [docs/SEGURANCA.md](docs/SEGURANCA.md) | Critérios de integração e modelo de ameaças STRIDE |

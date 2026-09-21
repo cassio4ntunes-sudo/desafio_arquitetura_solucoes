@@ -1,6 +1,6 @@
-# Arquitetura Alvo e de Transição
+# Arquitetura Alvo
 
-O que está no repositório é a **arquitetura implementada** (Docker Compose, um processo). Este documento descreve a **arquitetura alvo** — como o sistema roda em produção sob SLA — e a **arquitetura de transição** que liga uma à outra, inclusive no cenário de substituição de um legado.
+O que está no repositório é a **arquitetura implementada** (Docker Compose, dois serviços). Este documento descreve a **arquitetura alvo** — como o sistema roda em produção sob SLA — e o que muda para chegar lá.
 
 Para os diagramas C4 da solução atual e os ADRs, ver [../ARCHITECTURE.md](../ARCHITECTURE.md).
 
@@ -123,77 +123,10 @@ O MassTransit já suporta isso via `AddEntityFrameworkOutbox` / outbox do Marten
 
 ---
 
-## 2. Arquitetura de transição
-
-Cenário realista: o comerciante já opera com um sistema legado de caixa (ERP próprio ou planilha integrada) e não pode parar de vender durante a migração. A transição usa **Strangler Fig** — o novo sistema cresce em volta do legado até substituí-lo.
-
-### Fase 0 — Legado (ponto de partida)
-
-```mermaid
-graph LR
-    U["👤 Comerciante"] --> LEG["Sistema Legado<br/>lançamentos + relatório<br/>(base única, acoplada)"]
-    LEG --> DB[("Banco legado")]
-```
-
-Problema: relatório e registro compartilham o mesmo banco e o mesmo processo — o relatório pesado derruba o caixa. É precisamente o RNF que o desafio pede para resolver.
-
-### Fase 1 — Coexistência: facade + CDC (mês 1–2)
-
-```mermaid
-graph TB
-    U["👤 Comerciante"] --> FAC["Facade / API Gateway<br/>roteamento por rota"]
-    FAC -->|"escrita: 100%"| LEG["Sistema Legado"]
-    FAC -->|"leitura do consolidado: 0% → 100%"| NOVO["Consolidação (novo)"]
-    LEG --> DBL[("Banco legado")]
-    DBL -->|"CDC (Debezium)"| MQ["RabbitMQ"]
-    MQ --> ACL["Anti-Corruption Layer<br/>traduz registro legado → LancamentoRegistrado"]
-    ACL --> NOVO
-    NOVO --> DBN[("consolidado_diario")]
-
-    style ACL fill:#8b5a00,color:#fff
-```
-
-- A escrita continua toda no legado — risco zero para o caixa.
-- O CDC replica cada movimento; a **ACL** traduz o modelo legado para o evento `LancamentoRegistrado`, isolando o domínio novo do schema antigo.
-- O consolidado novo roda **em paralelo (shadow)** e é comparado diariamente com o relatório legado. Só depois de N dias com divergência zero o tráfego de leitura migra.
-- Ganho imediato: o relatório sai de cima do banco do caixa, resolvendo o gargalo original antes mesmo de migrar a escrita.
-
-### Fase 2 — Inversão da escrita (mês 3–4)
-
-```mermaid
-graph TB
-    U["👤 Comerciante"] --> FAC["Facade"]
-    FAC -->|"escrita: canário 5% → 100%"| NOVO["Lançamentos (novo)"]
-    FAC -->|"escrita: 95% → 0%"| LEG["Sistema Legado"]
-    NOVO --> ES[("Event Store")]
-    NOVO -->|"evento"| MQ["RabbitMQ"]
-    MQ --> CONS["Consolidação"]
-    MQ -->|"sincronismo reverso<br/>durante a coexistência"| LEG
-```
-
-- Canário por comerciante (5% → 25% → 50% → 100%), com rollback pela mesma chave de roteamento.
-- **Sincronismo reverso**: enquanto houver periférico lendo do legado, o evento novo também alimenta a base antiga. É a parte cara da coexistência e por isso a fase tem prazo fixo.
-
-### Fase 3 — Desativação (mês 5–6)
-
-Legado em somente-leitura, histórico arquivado (S3 Glacier por exigência fiscal) e a facade removida. Chega-se à arquitetura alvo da seção 1.
-
-### Critérios de avanço e de rollback
-
-| Fase | Avança quando | Rollback se |
-|---|---|---|
-| 1 → 2 | 14 dias com divergência de saldo = 0 entre os dois consolidados | Qualquer divergência não explicada |
-| 2 → 3 | 100% da escrita no novo por 30 dias; erro < 0,1%; p95 < 200ms | Erro > 1% ou perda de lançamento — o roteamento volta ao legado sem deploy |
-| 3 | Nenhum consumidor lendo do legado por 30 dias | — |
-
-> **A decisão que sustenta tudo isso:** a ACL da Fase 1 é o que permite migrar sem contaminar o domínio novo com o modelo antigo. É o ponto em que o mapeamento de domínios ([DOMINIOS-E-CAPACIDADES.md](DOMINIOS-E-CAPACIDADES.md)) deixa de ser documentação e passa a ser código.
-
----
-
-## 3. Evolução por horizonte
+## 2. Evolução por horizonte
 
 | Horizonte | Entregas |
 |---|---|
-| **Curto** (0–3 meses) | Outbox transacional; migrations versionadas; OpenTelemetry; extração da Consolidação para serviço próprio |
+| **Curto** (0–3 meses) | Outbox transacional; migrations versionadas; OpenTelemetry; RDS Multi-AZ |
 | **Médio** (3–9 meses) | Keycloak em modo produção (PostgreSQL dedicado + TLS + cluster); MFA; cache Redis; consolidado por período; estorno e fechamento de dia; read replica dedicada |
 | **Longo** (9+ meses) | Projeções analíticas (previsão de fluxo); multi-moeda; particionamento do event store por período |

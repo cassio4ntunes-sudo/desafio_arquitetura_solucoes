@@ -101,7 +101,7 @@ Plano completo de métricas, tracing e alertas em [OBSERVABILIDADE.md](OBSERVABI
 | "Desenho da solução completo (Arquitetura Alvo)" | [ARQUITETURA-ALVO.md](ARQUITETURA-ALVO.md), [../ARCHITECTURE.md](../ARCHITECTURE.md) |
 | "Justificativa na decisão/escolha de ferramentas" | ADRs em [../ARCHITECTURE.md](../ARCHITECTURE.md), [../FAQ.md](../FAQ.md) |
 | "Testes" | Coluna "Verificado por" das tabelas acima |
-| "Arquitetura de Transição" *(diferencial)* | [ARQUITETURA-ALVO.md](ARQUITETURA-ALVO.md#2-arquitetura-de-transição) |
+| "Arquitetura de Transição" *(diferencial)* | Resumo em [../FAQ.md](../FAQ.md#19-arquitetura-de-transição-para-sistemas-legados) |
 | "Estimativa de custos" *(diferencial)* | [CUSTOS.md](CUSTOS.md) |
 | "Monitoramento e Observabilidade" *(diferencial)* | [OBSERVABILIDADE.md](OBSERVABILIDADE.md) |
 | "Critérios de segurança para consumo de serviços" *(diferencial)* | [SEGURANCA.md](SEGURANCA.md) |

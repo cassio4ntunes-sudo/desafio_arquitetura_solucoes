@@ -420,7 +420,7 @@ tests/
 |---|---|
 | 🗺️ [docs/DOMINIOS-E-CAPACIDADES.md](docs/DOMINIOS-E-CAPACIDADES.md) | Mapeamento de domínios funcionais, capacidades de negócio, bounded contexts e context mapping |
 | 📋 [docs/REQUISITOS.md](docs/REQUISITOS.md) | Requisitos funcionais e não funcionais refinados, com critério de aceite e rastreabilidade ao enunciado |
-| 🎯 [docs/ARQUITETURA-ALVO.md](docs/ARQUITETURA-ALVO.md) | Arquitetura alvo em nuvem (multi-conta AWS), dimensionamento e **arquitetura de transição** (Strangler Fig) |
+| 🎯 [docs/ARQUITETURA-ALVO.md](docs/ARQUITETURA-ALVO.md) | Arquitetura alvo em nuvem (multi-conta AWS), dimensionamento para o RNF e evolução por horizonte |
 | 🧭 [docs/DECISOES-ARQUITETURAIS.md](docs/DECISOES-ARQUITETURAIS.md) | **Mapa das decisões** — como os 17 ADRs se encadeiam, o que cada um habilita e onde aparece na arquitetura alvo |
 | 📐 [ARCHITECTURE.md](ARCHITECTURE.md) | Diagramas C4, sequência, camadas Clean Architecture e os 17 ADRs |
 
