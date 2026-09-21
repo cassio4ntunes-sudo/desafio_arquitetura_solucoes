@@ -23,8 +23,8 @@
 Clone o repositório e inicie os containers:
 
 ```bash
-git clone https://github.com/jhenriquecosta/DesafioArquitetura.FluxoCaixa.git
-cd DesafioArquitetura.FluxoCaixa
+git clone https://github.com/cassio4ntunes-sudo/desafio_arquitetura_solucoes.git
+cd desafio_arquitetura_solucoes
 docker compose up --build -d --wait
 ```
 

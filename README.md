@@ -69,8 +69,8 @@ Web (Blazor WASM) ──OIDC/PKCE──→ Keycloak
 
 ```bash
 # Clonar o repositório
-git clone https://github.com/jhenriquecosta/DesafioArquitetura.FluxoCaixa.git
-cd DesafioArquitetura.FluxoCaixa
+git clone https://github.com/cassio4ntunes-sudo/desafio_arquitetura_solucoes.git
+cd desafio_arquitetura_solucoes
 
 # Subir todos os serviços (Keycloak + API + Web + PostgreSQL + RabbitMQ)
 # O --wait só retorna quando a API responde /health/ready
