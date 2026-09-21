@@ -117,7 +117,7 @@ O RNF do desafio — *"o serviço de controle de lançamento não deve ficar ind
 | Extrato (C4) | `FluxoDeCaixa.Application/Consultas` | Projeção de documentos do Marten |
 | Apresentação | `FluxoDeCaixa.Web` (Blazor WASM) | — |
 
-> **A fronteira de domínio virou fronteira de processo.** Os dois domínios core são hoje **serviços independentes**, com deploy, escala e ciclo de vida próprios:
+> **A fronteira de domínio é também fronteira de processo.** Os dois domínios core são **serviços independentes**, com deploy, escala e ciclo de vida próprios:
 >
 > | Domínio | Serviço | Escala por |
 > |---|---|---|
@@ -126,7 +126,7 @@ O RNF do desafio — *"o serviço de controle de lançamento não deve ficar ind
 >
 > A comunicação entre eles é **exclusivamente** pelo evento `LancamentoRegistrado` no RabbitMQ — não há chamada direta, nem `depends_on` do MS para o worker no `compose.yaml`. Derrubar a consolidação não afeta o registro de lançamentos: as mensagens ficam retidas e são processadas quando ela volta, sem perda nem duplicação.
 >
-> Vale notar **por que** a separação existe: não era necessária para cumprir o RNF — a comunicação assíncrona já o cumpria. Ela existe porque os dois domínios escalam por gatilhos diferentes, e no mesmo processo escalar um inflaria o outro sem necessidade. Ver [ADR-15](../ARCHITECTURE.md#adr-15-separação-de-ms-e-wkr-em-serviços-com-deploy-independente).
+> Vale notar **por que** a separação existe: ela não é necessária para cumprir o RNF — a comunicação assíncrona já o cumpre. Ela existe porque os dois domínios escalam por gatilhos diferentes, e no mesmo processo escalar um inflaria o outro sem necessidade. A separação vale também em tempo de compilação: os dois serviços não compartilham assembly, e o worker carrega apenas uma cópia local do contrato que consome. Ver [ADR-15](../ARCHITECTURE.md#adr-15-separação-de-ms-e-wkr-em-serviços-com-deploy-independente) e [ADR-18](../ARCHITECTURE.md#adr-18-cópia-local-do-contrato-em-vez-de-pacote-compartilhado).
 
 ---
 

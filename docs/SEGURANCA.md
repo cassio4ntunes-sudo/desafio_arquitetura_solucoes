@@ -28,7 +28,7 @@ Cobre os controles **implementados**, os **critérios de integração** que um c
 
 > **Decisão deliberada:** a ausência de fallback na configuração de identidade torna o deploy "mais frágil" de propósito. Um `Authority` embutido significaria que um deploy desconfigurado aceitaria tokens de um emissor que não é o nosso. Falhar no boot é o comportamento correto.
 
-> **O que mudou com o Keycloak:** a versão anterior autenticava na própria API (tabela `usuarios`, BCrypt, JWT HS256). Isso fechou de uma vez quatro lacunas que estavam declaradas como risco **alto** e **médio** nesta seção: ausência de revogação, HS256 impedindo validação por terceiros, ausência de MFA e ausência de política de senha. Ver [ADR-07](../ARCHITECTURE.md#adr-07-keycloak-como-identity-provider-oidc).
+> **Por que o IdP fecha esta seção:** autenticar na própria aplicação (tabela `usuarios`, BCrypt, JWT HS256) deixaria quatro lacunas de risco **alto** e **médio** em aberto por construção — ausência de revogação, HS256 impedindo validação por terceiros, ausência de MFA e ausência de política de senha. Delegar ao Keycloak resolve as quatro por configuração, não por código. Ver [ADR-07](../ARCHITECTURE.md#adr-07-keycloak-como-identity-provider-oidc).
 
 ---
 

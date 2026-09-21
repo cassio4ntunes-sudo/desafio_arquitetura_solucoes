@@ -122,7 +122,7 @@ docker compose down
 docker compose down -v
 ```
 
-> ⚠️ Se você já subiu uma versão anterior deste projeto, rode `docker compose down -v` antes de subir novamente. O schema de `consolidado_diario` mudou (passou a ter `comerciante_id` na chave primária) e o `CREATE TABLE IF NOT EXISTS` não migra um volume existente.
+> ⚠️ Se você já subiu este projeto antes, rode `docker compose down -v` antes de subir novamente. O DDL é `CREATE TABLE IF NOT EXISTS`, então ele não altera um volume que já exista: um `consolidado_diario` criado por outro build permanece com o schema antigo. Começar de um volume limpo evita o problema.
 
 ---
 

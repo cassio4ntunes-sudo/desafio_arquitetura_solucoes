@@ -101,11 +101,11 @@ graph TD
 
 Esta cadeia começa **antes da tecnologia**: no [mapa de capacidades](DOMINIOS-E-CAPACIDADES.md#2-mapa-de-capacidades-de-negócio), identidade foi classificada como **capacidade genérica** — não é onde o negócio se diferencia. Dessa classificação decorre "comprar em vez de construir", e só então "Keycloak".
 
-A primeira versão do projeto fez o contrário: construiu autenticação própria (tabela `usuarios`, BCrypt, JWT HS256). Funcionava, mas carregava quatro dívidas que **nenhuma delas era corrigível sem trocar a decisão de base**: sem revogação, HS256 impedindo validação por terceiros, sem MFA, sem política de senha.
+Inverter a cadeia — escolher a tecnologia primeiro e construir autenticação própria (tabela `usuarios`, BCrypt, JWT HS256) — produziria quatro dívidas das quais **nenhuma é corrigível sem trocar a decisão de base**: sem revogação, HS256 impedindo validação por terceiros, sem MFA, sem política de senha. Todas decorrem de a aplicação ser a autoridade de identidade, e não de como ela foi codificada.
 
-Trocar para um IdP fechou as quatro de uma vez — e habilitou duas decisões que seriam impossíveis antes:
+Delegar a um IdP fecha as quatro de uma vez — e habilita duas decisões que a alternativa tornaria impossíveis:
 
-- **RS256 com JWKS** torna viável o ADR-14: um parceiro valida o token sem jamais receber a chave que assina. Com HS256 isso era estruturalmente impossível.
+- **RS256 com JWKS** torna viável o ADR-14: um parceiro valida o token sem jamais receber a chave que assina. Com HS256 isso seria estruturalmente impossível.
 - **Protocolo OIDC padrão** torna o ADR-13 quase gratuito: promover o IdP a serviço corporativo é mudar `Keycloak:Authority` de host, não reescrever código.
 
 > **O teste de uma boa decisão de fronteira:** o ADR-13 move o IdP para outra conta AWS e **nenhuma linha de código muda**. Isso só é verdade porque o acoplamento foi feito ao protocolo, não ao produto.
@@ -118,6 +118,7 @@ graph TD
     A12 --> A13["ADR-13<br/>IdP corporativo"]
     A12 --> A16["ADR-16<br/>Secrets Manager"]
     A15["ADR-15<br/>MS + WKR separados"] --> A16
+    A15 --> A18["ADR-18<br/>Cópia local<br/>do contrato"]
     A14["ADR-14<br/>API Gateway + mTLS"] --> A17
     A11["ADR-11<br/>Sem fallback"] --> A16
 
@@ -126,7 +127,9 @@ graph TD
 
 A decisão estruturante aqui é o **ADR-12** (contas segregadas), e ela é uma decisão de *fronteira organizacional* espelhando a fronteira de domínio. Tudo o mais decorre: contas separadas exigem conectividade explícita (ADR-17); o IdP corporativo só faz sentido numa conta compartilhada (ADR-13); credenciais entre contas pedem gestão formal (ADR-16).
 
-O **ADR-15** merece nota. Ele *não* é necessário para cumprir o RNF — o desacoplamento assíncrono já o cumpre, e isso está provado por teste. O ADR-15 existe por uma razão diferente: **escala com gatilhos distintos**. Escrita escala por RPS; consolidação, por profundidade de fila. É por isso que ele aparece como decisão de *plataforma*, não de domínio — e por isso separar os processos foi deliberadamente adiado no escopo do desafio, onde adicionaria custo operacional sem provar nada novo.
+O **ADR-15** merece nota. Ele *não* é necessário para cumprir o RNF — o desacoplamento assíncrono já o cumpre, e isso está provado por teste. O ADR-15 existe por uma razão diferente: **escala com gatilhos distintos**. Escrita escala por RPS; consolidação, por profundidade de fila. É por isso que ele aparece como decisão de *plataforma*, não de domínio: nenhuma regra de negócio depende dele.
+
+Do ADR-15 decorre o **ADR-18**. Uma vez que os dois serviços têm deploy próprio, o evento `LancamentoRegistrado` deixa de ser um tipo interno e passa a ser contrato entre processos — e é preciso decidir como o consumidor obtém esse tipo sem recriar o acoplamento de compilação que o ADR-15 desfez. Com um único consumidor, a cópia local do contrato custa menos que um pacote em feed interno; com o segundo consumidor, o cálculo inverte.
 
 ---
 
@@ -161,6 +164,7 @@ Mapeamento direto entre os componentes do diagrama e os ADRs que os justificam:
 | **50 req/s com ≤ 5% de perda** | **ADR-03**, ADR-05 | `ConsolidadoLoadTests` (NBomber) |
 | Mapeamento de domínios e capacidades | — | [DOMINIOS-E-CAPACIDADES.md](DOMINIOS-E-CAPACIDADES.md) |
 | Arquitetura alvo | ADR-12 a ADR-17 | [ARQUITETURA-ALVO.md](ARQUITETURA-ALVO.md) |
+| Topologia de serviços | ADR-15, ADR-18 | [ARCHITECTURE.md](../ARCHITECTURE.md#decisões-da-arquitetura-alvo-e-da-topologia-de-serviços-adr-12-a-adr-18) |
 | Arquitetura de transição | ADR-14, ADR-17 | [ARQUITETURA-ALVO.md](ARQUITETURA-ALVO.md#2-arquitetura-de-transição) |
 | Estimativa de custos | ADR-12, ADR-15, ADR-16 | [CUSTOS.md](CUSTOS.md) |
 | Observabilidade | — | [OBSERVABILIDADE.md](OBSERVABILIDADE.md) |

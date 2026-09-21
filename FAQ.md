@@ -52,9 +52,9 @@ MassTransit oferece **abstrações poderosas** sobre o RabbitMQ: retry policies 
 
 ### 9. Por que Keycloak e não autenticação própria?
 
-Porque **identidade é capacidade genérica** — não é onde este negócio se diferencia. A primeira versão do projeto autenticava na própria API (tabela `usuarios`, BCrypt, JWT HS256) e funcionava, mas carregava quatro dívidas: sem revogação (token valia 24 h), HS256 impedindo que um parceiro validasse o token sem receber a chave que assina, sem MFA e sem política de senha. Todas desaparecem ao delegar para um IdP.
+Porque **identidade é capacidade genérica** — não é onde este negócio se diferencia. Autenticar na própria API (tabela `usuarios`, BCrypt, JWT HS256) é barato de escrever, mas carrega quatro dívidas estruturais: sem revogação, HS256 impedindo que um parceiro valide o token sem receber a chave que assina, sem MFA e sem política de senha. Nenhuma delas é corrigível sem trocar a decisão de base — todas decorrem de a aplicação ser a autoridade de identidade.
 
-Hoje a API não guarda senha, não emite token e não tem tabela de usuários. Ver [ADR-07](ARCHITECTURE.md#adr-07-keycloak-como-identity-provider-oidc).
+Delegando a um IdP, as quatro desaparecem: a API não guarda senha, não emite token e não tem tabela de usuários. Ver [ADR-07](ARCHITECTURE.md#adr-07-keycloak-como-identity-provider-oidc).
 
 ### 10. Por que Keycloak e não Cognito/Auth0?
 

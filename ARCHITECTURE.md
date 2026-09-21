@@ -72,67 +72,92 @@ graph TB
 
 As dependências fluem de fora para dentro. A camada Domain não depende de nada externo.
 
-O diagrama separa **bibliotecas** (sem deploy próprio) de **unidades de deploy** (ADR-15). Cada serviço referencia só o que usa: o worker não conhece a Infrastructure, e o MS usa a Consolidação apenas do lado da leitura.
+Cada serviço tem a **sua própria árvore de projetos** sob `services/<serviço>/src/`. Não há biblioteca compartilhada entre MS e worker: o grafo de compilação de cada um contém exatamente o que ele executa, e nada além disso (ADR-15, ADR-18).
 
 ```mermaid
 graph LR
-    subgraph Deploy["Unidades de deploy"]
-        Web["FluxoDeCaixa.Web<br/>Blazor WASM,<br/>MudBlazor"]
+    Web["FluxoDeCaixa.Web<br/>Blazor WASM, MudBlazor"]
+
+    subgraph MSTree["services/carrefour.ms.fluxodecaixa"]
         MS["Carrefour.MS.FluxoDeCaixa<br/>Endpoints, Middleware,<br/>OpenAPI, JwtBearer"]
-        WKR["Carrefour.WKR.Consolidacao<br/>Host do consumer,<br/>health probes"]
+        MSApp["Application<br/>Commands, Queries,<br/>Handlers (MediatR)"]
+        MSInfra["Infrastructure<br/>Marten, MassTransit,<br/>Serilog"]
+        MSCons["Consolidação<br/>Consultas + Repository<br/>(só leitura)"]
+        MSDom["Domain<br/>Agregados, VOs,<br/>Eventos"]
     end
 
-    subgraph Libs["Bibliotecas (compartilhadas)"]
-        Application["Application<br/>Commands, Queries,<br/>Handlers (MediatR)"]
-        Infrastructure["Infrastructure<br/>Marten, MassTransit,<br/>Serilog"]
-        Consolidacao["Consolidação<br/>Consumer, Repository<br/>(Npgsql)"]
-        Domain["Domain<br/>Eventos, VOs,<br/>Agregados"]
+    subgraph WKRTree["services/carrefour.wkr.consolidacao"]
+        WKR["Carrefour.WKR.Consolidacao<br/>Host do consumer,<br/>health probes"]
+        WKRCons["Consolidação<br/>Consumidores + Repository<br/>(escrita)"]
+        WKRDom["Domain<br/>só LancamentoRegistrado<br/>(contrato consumido)"]
     end
 
     Web -->|"HTTP + Bearer"| MS
 
-    MS --> Application
-    MS --> Infrastructure
-    MS -.->|"só leitura<br/>do read model"| Consolidacao
+    MS --> MSApp
+    MS --> MSInfra
+    MS --> MSCons
+    MSInfra --> MSApp
+    MSInfra --> MSDom
+    MSApp --> MSDom
+    MSCons --> MSDom
 
-    WKR -->|"escrita<br/>do read model"| Consolidacao
+    WKR --> WKRCons
+    WKRCons --> WKRDom
 
-    Infrastructure --> Application
-    Infrastructure --> Domain
-    Application --> Domain
-    Consolidacao --> Domain
+    MSDom -. "contrato copiado<br/>(ADR-18)" .-> WKRDom
 
     style MS fill:#0d3b66,color:#fff
     style WKR fill:#0d3b66,color:#fff
-    style Domain fill:#1b4332,color:#fff
+    style MSDom fill:#1b4332,color:#fff
+    style WKRDom fill:#1b4332,color:#fff
 ```
 
-> **As setas indicam dependência, não chamada.** Domain não depende de nada (camada mais interna). Não há seta entre MS e WKR: os dois processos só se encontram através do RabbitMQ, e nenhum referencia o assembly do outro.
+> **As setas cheias indicam dependência de compilação.** Domain não depende de nada (camada mais interna). Não há nenhuma seta cruzando as duas árvores: em tempo de execução os processos só se encontram pelo RabbitMQ, e em tempo de compilação não se encontram de forma alguma.
 >
-> A seta tracejada do MS para a Consolidação é deliberadamente estreita — o MS usa apenas o repositório de **consulta** (`GET /consolidado/diario`). Quem **escreve** em `consolidado_diario` é exclusivamente o worker. Essa assimetria é o CQRS aparecendo na topologia: um processo escreve o read model, outro o lê.
+> A única linha entre as árvores é **tracejada e não é uma referência** — é a cópia do contrato `LancamentoRegistrado`, mantida em sincronia por disciplina e por teste, não pelo compilador (ADR-18).
+
+**A Consolidação aparece nas duas árvores, mas cada cópia carrega metade do CQRS:**
+
+| | MS | Worker |
+|---|---|---|
+| `Consultas/` | ✅ `ConsultarConsolidadoDiario` | — |
+| `Consumidores/` | — | ✅ `LancamentoRegistradoConsumer` |
+| `Repositorios/` | ✅ usado para `SELECT` | ✅ usado para `UPSERT` |
+
+Um processo **lê** o read model, o outro o **escreve**. O nome do projeto é o mesmo por conveniência, mas o conteúdo compilado em cada serviço não é.
 
 ### Mapeamento para projetos .NET
 
-**Bibliotecas** (compartilhadas, sem deploy próprio):
+**`services/carrefour.ms.fluxodecaixa`** — API REST, escrita no event store e leitura do consolidado:
 
-| Camada | Projeto | Dependências NuGet |
+| Projeto | Papel | Dependências NuGet |
 |---|---|---|
-| Domain | `FluxoDeCaixa.Domain` | Nenhuma (pure C#) |
-| Application | `FluxoDeCaixa.Application` | MediatR, FluentValidation |
-| Infrastructure | `FluxoDeCaixa.Infrastructure` | Marten, MassTransit.RabbitMQ, Serilog |
-| Consolidação | `FluxoDeCaixa.Consolidacao` | Npgsql, MassTransit |
+| `Carrefour.MS.FluxoDeCaixa` | Host — endpoints, middleware, autenticação | Microsoft.AspNetCore.OpenApi, JwtBearer, Npgsql |
+| `FluxoDeCaixa.Application` | Commands, Queries, Handlers | MediatR, FluentValidation |
+| `FluxoDeCaixa.Infrastructure` | Event store e publicação | Marten, MassTransit.RabbitMQ, Serilog |
+| `FluxoDeCaixa.Consolidacao` | Consulta ao read model | Npgsql |
+| `FluxoDeCaixa.Domain` | Agregados, value objects, eventos | Nenhuma (pure C#) |
 
-**Serviços** (unidades de deploy — ADR-15):
+**`services/carrefour.wkr.consolidacao`** — consome a fila e materializa o read model:
 
-| Serviço | Projeto | Referencia | Dependências NuGet |
-|---|---|---|---|
-| Lançamentos | `Carrefour.MS.FluxoDeCaixa` | Domain, Application, Infrastructure, Consolidação *(só leitura)* | Microsoft.AspNetCore.OpenApi, JwtBearer, Npgsql |
-| Consolidação | `Carrefour.WKR.Consolidacao` | Domain, Consolidação | MassTransit.RabbitMQ, Npgsql, Serilog |
-| Apresentação | `FluxoDeCaixa.Web` | — | MudBlazor, Components.WebAssembly(.Authentication) |
+| Projeto | Papel | Dependências NuGet |
+|---|---|---|
+| `Carrefour.WKR.Consolidacao` | Host — consumer e probes de saúde | MassTransit.RabbitMQ, Npgsql, Serilog |
+| `FluxoDeCaixa.Consolidacao` | Consumer e escrita idempotente | MassTransit.RabbitMQ, Npgsql |
+| `FluxoDeCaixa.Domain` | Apenas o contrato `LancamentoRegistrado` | Nenhuma (pure C#) |
 
-> O worker **não referencia** `FluxoDeCaixa.Infrastructure`: ele não toca no event store, só materializa o read model. Arrastar a Infrastructure traria o Marten junto — uma dependência que esse processo jamais usa. O grafo de dependências de cada serviço é exatamente o que ele precisa.
+**`services/fluxodecaixa.web`** — SPA servida por nginx:
 
-> As bibliotecas mantiveram o prefixo `FluxoDeCaixa.*` porque não são serviços; o prefixo `Carrefour.*` identifica as unidades implantáveis.
+| Projeto | Papel | Dependências NuGet |
+|---|---|---|
+| `FluxoDeCaixa.Web` | Blazor WebAssembly | MudBlazor, Components.WebAssembly(.Authentication) |
+
+> O worker **não referencia** `FluxoDeCaixa.Infrastructure`. Ele não toca no event store — só materializa o read model — e a Infrastructure traria o Marten junto, com sua configuração de schema e conexão, para um processo que jamais o chamaria. Menos imagem, menos superfície de CVE, menos motivos para recompilar.
+>
+> Pelo mesmo critério, o `FluxoDeCaixa.Domain` do worker tem **um** arquivo: agregados e value objects pertencem a quem valida regra de negócio, e o worker não valida — ele consolida o que já foi validado do outro lado.
+
+> Os projetos mantiveram o prefixo `FluxoDeCaixa.*` porque não são unidades de deploy; o prefixo `Carrefour.*` identifica os hosts implantáveis.
 
 ---
 
@@ -294,10 +319,10 @@ sequenceDiagram
 
 ### ADR-07: Keycloak como Identity Provider (OIDC)
 
-- **Status:** Aceita — *substitui a decisão anterior de autenticação própria*
-- **Contexto:** É preciso identificar comerciantes e isolar seus dados. A primeira versão construiu isso na própria API: tabela `usuarios`, hash BCrypt e JWT assinado com segredo simétrico (HS256). Funcionava, mas carregava quatro problemas estruturais: **(1)** sem revogação — um token roubado valia 24 h; **(2)** HS256 exige compartilhar a chave *que assina* com qualquer parceiro que precise validar o token, inviabilizando integração externa; **(3)** sem MFA, sem política de senha, sem recuperação de conta; **(4)** a aplicação passava a guardar credenciais, ampliando o raio de um vazamento.
+- **Status:** Aceita
+- **Contexto:** É preciso identificar comerciantes e isolar seus dados. A alternativa óbvia — autenticar na própria API, com tabela `usuarios`, hash BCrypt e JWT assinado com segredo simétrico (HS256) — é barata de escrever e cara de manter, por quatro razões estruturais: **(1)** não há revogação, então um token roubado vale até expirar; **(2)** HS256 exige compartilhar a chave *que assina* com qualquer parceiro que precise validar o token, o que inviabiliza integração externa; **(3)** não há MFA, política de senha nem recuperação de conta sem construir cada uma; **(4)** a aplicação passa a guardar credenciais, ampliando o raio de um vazamento.
 
-  Identidade é uma **capacidade genérica** ([DOMINIOS-E-CAPACIDADES.md](docs/DOMINIOS-E-CAPACIDADES.md)): não é onde este negócio se diferencia. Construir era dívida assumida; a decisão correta é comprar.
+  Nenhum desses pontos é corrigível sem trocar a decisão de base, porque todos decorrem de a aplicação ser a autoridade de identidade. E identidade é uma **capacidade genérica** ([DOMINIOS-E-CAPACIDADES.md](docs/DOMINIOS-E-CAPACIDADES.md)): não é onde este negócio se diferencia. Construir seria dívida assumida na origem; a decisão correta é comprar.
 
 - **Decisão:** Delegar identidade ao **Keycloak 26**, com um realm versionado no repositório (`keycloak/realm-fluxocaixa.json`) e importado no boot — nenhuma configuração manual.
   - **Frontend** (`fluxocaixa-web`): cliente público, **Authorization Code + PKCE (S256)**. Sem client secret e sem ROPC. A senha do comerciante é digitada na página do Keycloak e nunca transita pelo nosso código.
@@ -306,7 +331,7 @@ sequenceDiagram
   - O `sub` do token é o `ComercianteId`, extraído em `ClaimsPrincipalExtensions.ObterComercianteId()` e usado para escopar toda consulta e todo comando.
 
 - **Consequências:**
-  - ✅ **Zero credencial na aplicação** — some a tabela `usuarios`, some o BCrypt, some o segredo de assinatura
+  - ✅ **Zero credencial na aplicação** — não há tabela `usuarios`, não há BCrypt, não há segredo de assinatura
   - ✅ **RS256 com JWKS** — um parceiro valida o token sem jamais receber a chave privada; destrava integração externa
   - ✅ **Revogação real** — token de 15 min + sessão gerenciada pelo IdP; logout encerra a sessão no Keycloak, não só no browser
   - ✅ **MFA, política de senha, brute-force protection e recuperação de conta** vêm de graça e por configuração
@@ -364,7 +389,7 @@ sequenceDiagram
 
 ---
 
-## Decisões da Arquitetura Alvo (ADR-12 a ADR-17)
+## Decisões da Arquitetura Alvo e da Topologia de Serviços (ADR-12 a ADR-18)
 
 Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`. Os que seguem descrevem a **arquitetura alvo em nuvem** — decisões de plataforma que não fazem sentido exercitar no escopo do desafio, mas que definem o desenho de produção. O diagrama correspondente está em [docs/ARQUITETURA-ALVO.md](docs/ARQUITETURA-ALVO.md); o mapa de como todas as decisões se relacionam, em [docs/DECISOES-ARQUITETURAIS.md](docs/DECISOES-ARQUITETURAIS.md).
 
@@ -411,8 +436,8 @@ Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`.
 
 ### ADR-15: Separação de MS e WKR em serviços com deploy independente
 
-- **Status:** ✅ **Implementada** — *concretiza a nota de monólito modular em [DOMINIOS-E-CAPACIDADES.md](docs/DOMINIOS-E-CAPACIDADES.md#4-da-fronteira-de-domínio-à-fronteira-de-serviço)*
-- **Contexto:** Antes, API e consumer rodavam no mesmo processo. O RNF do desafio já era cumprido — a comunicação é assíncrona, então derrubar o consumer não derrubava a escrita. Mas os dois têm **gatilhos de escala diferentes**: a escrita escala por RPS, a consolidação por profundidade de fila. No mesmo processo, escalar um infla o outro sem necessidade. E a garantia do RNF dependia apenas do protocolo, não da topologia.
+- **Status:** ✅ **Implementada** — *concretiza a fronteira de serviço descrita em [DOMINIOS-E-CAPACIDADES.md](docs/DOMINIOS-E-CAPACIDADES.md#4-da-fronteira-de-domínio-à-fronteira-de-serviço)*
+- **Contexto:** Registro de lançamentos e consolidação são dois domínios com **gatilhos de escala diferentes**: a escrita escala por RPS, a consolidação por profundidade de fila. Hospedá-los no mesmo processo funcionaria — a comunicação entre eles já é assíncrona, então derrubar a consolidação não derrubaria a escrita. Mas escalar um inflaria o outro sem necessidade, e a garantia do RNF dependeria apenas do protocolo, não da topologia: bastaria alguém registrar o consumer no host errado para o acoplamento voltar sem que nenhum teste acusasse.
 - **Decisão:** Dois hosts com deploy, escala e ciclo de vida próprios:
 
   | Serviço | Papel | Superfície |
@@ -420,15 +445,17 @@ Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`.
   | `Carrefour.MS.FluxoDeCaixa` | API REST, escrita no event store, **publica** `LancamentoRegistrado`, **lê** o consolidado | HTTP `:5000` |
   | `Carrefour.WKR.Consolidacao` | **Consome** a fila e materializa `consolidado_diario` | Apenas probes de saúde `:5001` |
 
-  O registro no contêiner de DI virou granular (`AddConsolidadoRepositorio`, `AddConsolidadoConsultas`): cada serviço compõe só o que usa. O MS **não registra consumer algum**. O worker **não referencia** `FluxoDeCaixa.Infrastructure` — não toca no event store, então não arrasta Marten.
+  O registro no contêiner de DI é granular (`AddConsolidadoRepositorio`, `AddConsolidadoConsultas`): cada serviço compõe só o que usa, e o MS **não registra consumer algum**.
+
+  A separação vai além do processo e alcança o **grafo de compilação**: os dois serviços não compartilham assembly nenhum. Cada um tem sua própria árvore de projetos sob `services/<serviço>/src/`, e o worker carrega apenas uma cópia local do contrato consumido — ver [ADR-18](#adr-18-cópia-local-do-contrato-em-vez-de-pacote-compartilhado). Em particular, o worker **não referencia** `FluxoDeCaixa.Infrastructure`: ele não toca no event store, então não faz sentido arrastar o Marten — com sua configuração de schema e conexão — para um processo que jamais o chamaria.
 
 - **Consequências:**
   - ✅ Escala independente pela métrica adequada a cada um
   - ✅ Falha ou deploy do worker **não interrompe** o registro de lançamentos — o RNF passa a valer no nível de processo, não só de protocolo
-  - ✅ Foi mudança de topologia, não de domínio: nenhuma regra de negócio mudou
+  - ✅ É decisão de topologia, não de domínio: nenhuma regra de negócio depende dela
   - ✅ O `compose.yaml` **não** tem `depends_on` do MS para o worker — fazê-lo recriaria o acoplamento proibido
   - ⚠️ Dois artefatos para versionar, implantar e observar
-  - ⚠️ O contrato do evento `LancamentoRegistrado` agora é de fato entre processos: mudanças exigem compatibilidade retroativa
+  - ⚠️ O contrato do evento `LancamentoRegistrado` é de fato entre processos: mudanças exigem compatibilidade retroativa (ADR-18)
   - ⚠️ O DDL idempotente roda nos dois hosts, porque o MS não pode esperar o worker para subir (em produção vira step de migrations)
 
 - **Verificação operacional** — com o ambiente no ar, derrubando o worker:
@@ -469,6 +496,30 @@ Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`.
   - ✅ Topologia hub-and-spoke: novos domínios se conectam sem malha de peering
   - ⚠️ Direct Connect tem custo fixo e prazo de provisionamento em semanas — precisa entrar cedo no cronograma
   - ⚠️ Transit Gateway cobra por anexo e por GB processado
+
+### ADR-18: Cópia local do contrato em vez de pacote compartilhado
+
+- **Status:** ✅ **Implementada**
+- **Contexto:** O ADR-15 separou MS e WKR em unidades de deploy distintas, e o evento `LancamentoRegistrado` passou a ser um contrato entre processos. Falta decidir **como o consumidor obtém o tipo**. Três caminhos:
+
+  | Opção | Custo | Risco |
+  |---|---|---|
+  | Referenciar o projeto do produtor | Zero | Recria o acoplamento de compilação que o ADR-15 desfez: o worker passaria a recompilar por mudanças em agregados que não usa |
+  | Pacote `FluxoDeCaixa.Contracts` em feed interno | Feed, versionamento e pipeline de publicação | Baixo — é a resposta certa quando há vários consumidores |
+  | Cópia local do contrato | Duplicação de um record | Divergência silenciosa entre produtor e consumidor |
+
+- **Decisão:** **Cópia local.** Cada serviço tem sua própria árvore de projetos sob `services/<serviço>/src/`, e o `FluxoDeCaixa.Domain` do worker contém **apenas** `LancamentoRegistrado` — nada de agregados, value objects ou modelos de leitura, que o worker nunca precisou. A regra de evolução fica documentada junto da cópia, em [`FluxoDeCaixa.Domain/README.md`](services/carrefour.wkr.consolidacao/src/FluxoDeCaixa.Domain/README.md).
+
+  É o padrão de quem opera multi-repo: o consumidor não compartilha código com o produtor, ele copia o contrato. Com **um** consumidor, montar feed, versionamento e pipeline de publicação custaria mais do que o problema que resolve.
+
+- **Consequências:**
+  - ✅ **Grafo de compilação mínimo** — o worker não recompila por mudanças que não lhe dizem respeito, e sua imagem não carrega Marten
+  - ✅ **A duplicação é visível** — um projeto de uma classe, com README explicando por que existe, é mais honesto que uma referência que ninguém percebe que existe
+  - ✅ **Fronteira explícita** — obriga a tratar `LancamentoRegistrado` como *Published Language* ([DOMINIOS-E-CAPACIDADES.md](docs/DOMINIOS-E-CAPACIDADES.md)), não como classe interna
+  - ⚠️ **Divergência é possível** — nada no compilador impede que produtor e consumidor discordem. A defesa é um teste de contrato no worker (`Contrato/LancamentoRegistradoTests.cs`), que falha se o formato serializado mudar
+  - ⚠️ **Não escala para N consumidores** — com um segundo consumidor, a cópia vira manutenção em paralelo e o pacote em feed interno passa a valer o custo. É o gatilho para revisitar esta decisão
+
+- **Regra de evolução do contrato:** produtor e consumidor são implantados em momentos diferentes, então a compatibilidade retroativa é obrigatória. Adicionar campo opcional é permitido; remover campo, renomear campo ou trocar tipo exige versionar a mensagem.
 
 ---
 
