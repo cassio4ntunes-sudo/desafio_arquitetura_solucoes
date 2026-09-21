@@ -85,8 +85,8 @@ docker compose ps
 | Serviço | URL | Credenciais |
 |---|---|---|
 | **Frontend (Blazor)** | http://localhost:5010 | `demo@loja.com` / `Senha123!` (login pelo Keycloak) |
-| API REST (`carrefour.ms.fluxodecaixa`) | http://localhost:5000 | Bearer token emitido pelo Keycloak |
-| Worker (`carrefour.wkr.consolidacao`) | http://localhost:5001/health/ready | Só probes de saúde — sem endpoint de negócio |
+| API REST (`ms.fluxodecaixa`) | http://localhost:5000 | Bearer token emitido pelo Keycloak |
+| Worker (`wkr.consolidacao`) | http://localhost:5001/health/ready | Só probes de saúde — sem endpoint de negócio |
 | **Keycloak** | http://localhost:8081 | Console admin: `admin` / `admin` |
 | Descoberta OIDC do realm | http://localhost:8081/realms/fluxocaixa/.well-known/openid-configuration | — |
 | Documento OpenAPI | http://localhost:5000/openapi/v1.json | — |
@@ -294,7 +294,7 @@ O requisito central do desafio pode ser verificado à mão em um minuto. Com o a
 
 ```bash
 # 1. Derruba SÓ o worker de consolidação
-docker compose stop carrefour.wkr.consolidacao
+docker compose stop wkr.consolidacao
 
 # 2. Registre lançamentos — todos devem responder 201
 curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5000/lancamentos \
@@ -305,7 +305,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5000/lancament
 docker compose exec rabbitmq rabbitmqctl list_queues name messages
 
 # 4. Religue — o acúmulo é processado
-docker compose start carrefour.wkr.consolidacao
+docker compose start wkr.consolidacao
 ```
 
 Resultado observado nesta implementação:
@@ -348,14 +348,14 @@ src/
 │
 │   ── SERVIÇOS (unidades de deploy) ──────────────────────────────────────
 │
-├── Carrefour.MS.FluxoDeCaixa/        # 🟦 Lançamentos: API REST + escrita + publicação
+├── MS.FluxoDeCaixa/        # 🟦 Lançamentos: API REST + escrita + publicação
 │   ├── Endpoints/                    # Lançamentos, Consolidado (leitura), Metadados
 │   ├── DTOs/                         # Request/Response records
 │   ├── Extensoes/                    # ClaimsPrincipalExtensions (sub → ComercianteId)
 │   ├── Saude/                        # PostgresHealthCheck
 │   ├── Middleware/                   # CorrelationIdMiddleware
 │   └── Dockerfile
-├── Carrefour.WKR.Consolidacao/       # 🟦 Consolidação: consome a fila e materializa
+├── WKR.Consolidacao/       # 🟦 Consolidação: consome a fila e materializa
 │   ├── Saude/                        # PostgresHealthCheck
 │   ├── Program.cs                    # MassTransit + consumer; sem endpoint de negócio
 │   └── Dockerfile
@@ -373,7 +373,7 @@ tests/
 └── FluxoDeCaixa.Tests.Load/          # Teste de carga (NBomber)
 ```
 
-> **Bibliotecas × serviços.** O prefixo `Carrefour.*` marca as duas unidades implantáveis; as bibliotecas mantêm `FluxoDeCaixa.*` porque não têm deploy próprio. O worker não referencia `FluxoDeCaixa.Infrastructure`: ele não toca no event store, então não arrasta o Marten.
+> **Bibliotecas × serviços.** Os prefixos `MS.*` e `WKR.*` marcam as duas unidades implantáveis; as bibliotecas mantêm `FluxoDeCaixa.*` porque não têm deploy próprio. O worker não referencia `FluxoDeCaixa.Infrastructure`: ele não toca no event store, então não arrasta o Marten.
 
 ---
 

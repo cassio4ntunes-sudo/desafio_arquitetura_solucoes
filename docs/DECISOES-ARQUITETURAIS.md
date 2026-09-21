@@ -141,13 +141,13 @@ Mapeamento direto entre os componentes do diagrama e os ADRs que os justificam:
 |---|---|---|
 | **Conta Share Enterprise** / **Conta Domínio** | ADR-12 | Fronteira de conta espelha fronteira de *bounded context* |
 | `Enterprise IDP Keycloak` | ADR-07, ADR-13 | Identidade é capacidade genérica → comprar e compartilhar |
-| `Carrefour.APG.FluxoCaixa` | ADR-14 | Ponto único de entrada; *throttling* e validação na borda |
+| `APG.FluxoCaixa` | ADR-14 | Ponto único de entrada; *throttling* e validação na borda |
 | `CA TrustStore` + **mTLS** | ADR-14 | Autenticar o legado por certificado, não por segredo estático |
-| `Carrefour.MS.FluxoDeCaixa` | ADR-01, 04, 05, 06, 15 | Caminho de escrita: Event Sourcing + CQRS |
-| `Carrefour.WKR.FluxoDeCaixaConsolidacao` | ADR-02, 03, 10, 15 | Consumidor assíncrono idempotente que materializa o read model |
-| `Carrefour.RabbitMQ.Fila` | ADR-02 | Desacoplamento que cumpre o RNF do enunciado |
-| `Carrefour.Postgres.FluxoDeCaixa` | ADR-01, 03 | Event store *e* read model no mesmo motor |
-| `Carrefour.SecretsManager.FluxoDeCaixa` | ADR-11, ADR-16 | Nenhuma credencial em código ou variável de ambiente |
+| `MS.FluxoDeCaixa` | ADR-01, 04, 05, 06, 15 | Caminho de escrita: Event Sourcing + CQRS |
+| `WKR.Consolidacao` | ADR-02, 03, 10, 15 | Consumidor assíncrono idempotente que materializa o read model |
+| `RabbitMQ.Fila` | ADR-02 | Desacoplamento que cumpre o RNF do enunciado |
+| `Postgres.FluxoDeCaixa` | ADR-01, 03 | Event store *e* read model no mesmo motor |
+| `SecretsManager.FluxoDeCaixa` | ADR-11, ADR-16 | Nenhuma credencial em código ou variável de ambiente |
 | `Transit Gateway` / `Direct Connect` | ADR-17 | Tráfego de identidade e integração fora da internet pública |
 | **Observabilidade** (ambas as contas) | — | Ver [OBSERVABILIDADE.md](OBSERVABILIDADE.md) |
 | `Legado` (on-premises) | ADR-14 | Consumidor externo autenticado por mTLS, alcançado por Direct Connect (ADR-17) |

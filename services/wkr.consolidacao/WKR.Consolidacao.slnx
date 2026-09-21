@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WKR.Consolidacao/WKR.Consolidacao.csproj" />
+    <Project Path="src/FluxoDeCaixa.Consolidacao/FluxoDeCaixa.Consolidacao.csproj" />
+    <Project Path="src/FluxoDeCaixa.Domain/FluxoDeCaixa.Domain.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WKR.Consolidacao.Tests/WKR.Consolidacao.Tests.csproj" />
+  </Folder>
+</Solution>

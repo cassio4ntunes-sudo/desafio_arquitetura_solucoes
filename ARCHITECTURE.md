@@ -29,8 +29,8 @@ graph TB
     subgraph "Docker Compose"
         Web["Web<br/>Blazor WASM + nginx<br/>:5010"]
         KC["Keycloak 26<br/>Identity Provider<br/>:8081"]
-        MS["Carrefour.MS.FluxoDeCaixa<br/>API REST — recebe HTTP,<br/>grava o evento e publica<br/>:5000"]
-        WKR["Carrefour.WKR.Consolidacao<br/>worker — consome a fila<br/>e materializa o read model<br/>:5001 (só health)"]
+        MS["MS.FluxoDeCaixa<br/>API REST — recebe HTTP,<br/>grava o evento e publica<br/>:5000"]
+        WKR["WKR.Consolidacao<br/>worker — consome a fila<br/>e materializa o read model<br/>:5001 (só health)"]
         PG["PostgreSQL 16<br/>Event Store +<br/>Consolidado<br/>:5433"]
         RMQ["RabbitMQ 3<br/>Message Broker<br/>:5672"]
     end
@@ -58,8 +58,8 @@ graph TB
 | Container | Imagem | Porta | Função |
 |---|---|---|---|
 | `web` | Build local (Dockerfile) | 5010:80 | Blazor WASM SPA servido por nginx |
-| `carrefour.ms.fluxodecaixa` | Build local (Dockerfile) | 5000:8080 | API REST + escrita no event store + publicação do evento |
-| `carrefour.wkr.consolidacao` | Build local (Dockerfile) | 5001:8080 | Worker que consome a fila e materializa o consolidado (só probes de saúde) |
+| `ms.fluxodecaixa` | Build local (Dockerfile) | 5000:8080 | API REST + escrita no event store + publicação do evento |
+| `wkr.consolidacao` | Build local (Dockerfile) | 5001:8080 | Worker que consome a fila e materializa o consolidado (só probes de saúde) |
 | `keycloak` | quay.io/keycloak/keycloak:26.0 | 8081:8080 | Identity Provider — realm importado de `keycloak/realm-fluxocaixa.json` |
 | `postgres` | postgres:16-alpine | 5433:5432 | Event Store (Marten) + Tabela consolidado_diario |
 | `rabbitmq` | rabbitmq:3-management | 5672 + 15672 | Broker de mensagens + Management UI |
@@ -78,16 +78,16 @@ Cada serviço tem a **sua própria árvore de projetos** sob `services/<serviço
 graph LR
     Web["FluxoDeCaixa.Web<br/>Blazor WASM, MudBlazor"]
 
-    subgraph MSTree["services/carrefour.ms.fluxodecaixa"]
-        MS["Carrefour.MS.FluxoDeCaixa<br/>Endpoints, Middleware,<br/>OpenAPI, JwtBearer"]
+    subgraph MSTree["services/ms.fluxodecaixa"]
+        MS["MS.FluxoDeCaixa<br/>Endpoints, Middleware,<br/>OpenAPI, JwtBearer"]
         MSApp["Application<br/>Commands, Queries,<br/>Handlers (MediatR)"]
         MSInfra["Infrastructure<br/>Marten, MassTransit,<br/>Serilog"]
         MSCons["Consolidação<br/>Consultas + Repository<br/>(só leitura)"]
         MSDom["Domain<br/>Agregados, VOs,<br/>Eventos"]
     end
 
-    subgraph WKRTree["services/carrefour.wkr.consolidacao"]
-        WKR["Carrefour.WKR.Consolidacao<br/>Host do consumer,<br/>health probes"]
+    subgraph WKRTree["services/wkr.consolidacao"]
+        WKR["WKR.Consolidacao<br/>Host do consumer,<br/>health probes"]
         WKRCons["Consolidação<br/>Consumidores + Repository<br/>(escrita)"]
         WKRDom["Domain<br/>só LancamentoRegistrado<br/>(contrato consumido)"]
     end
@@ -129,21 +129,21 @@ Um processo **lê** o read model, o outro o **escreve**. O nome do projeto é o 
 
 ### Mapeamento para projetos .NET
 
-**`services/carrefour.ms.fluxodecaixa`** — API REST, escrita no event store e leitura do consolidado:
+**`services/ms.fluxodecaixa`** — API REST, escrita no event store e leitura do consolidado:
 
 | Projeto | Papel | Dependências NuGet |
 |---|---|---|
-| `Carrefour.MS.FluxoDeCaixa` | Host — endpoints, middleware, autenticação | Microsoft.AspNetCore.OpenApi, JwtBearer, Npgsql |
+| `MS.FluxoDeCaixa` | Host — endpoints, middleware, autenticação | Microsoft.AspNetCore.OpenApi, JwtBearer, Npgsql |
 | `FluxoDeCaixa.Application` | Commands, Queries, Handlers | MediatR, FluentValidation |
 | `FluxoDeCaixa.Infrastructure` | Event store e publicação | Marten, MassTransit.RabbitMQ, Serilog |
 | `FluxoDeCaixa.Consolidacao` | Consulta ao read model | Npgsql |
 | `FluxoDeCaixa.Domain` | Agregados, value objects, eventos | Nenhuma (pure C#) |
 
-**`services/carrefour.wkr.consolidacao`** — consome a fila e materializa o read model:
+**`services/wkr.consolidacao`** — consome a fila e materializa o read model:
 
 | Projeto | Papel | Dependências NuGet |
 |---|---|---|
-| `Carrefour.WKR.Consolidacao` | Host — consumer e probes de saúde | MassTransit.RabbitMQ, Npgsql, Serilog |
+| `WKR.Consolidacao` | Host — consumer e probes de saúde | MassTransit.RabbitMQ, Npgsql, Serilog |
 | `FluxoDeCaixa.Consolidacao` | Consumer e escrita idempotente | MassTransit.RabbitMQ, Npgsql |
 | `FluxoDeCaixa.Domain` | Apenas o contrato `LancamentoRegistrado` | Nenhuma (pure C#) |
 
@@ -157,7 +157,7 @@ Um processo **lê** o read model, o outro o **escreve**. O nome do projeto é o 
 >
 > Pelo mesmo critério, o `FluxoDeCaixa.Domain` do worker tem **um** arquivo: agregados e value objects pertencem a quem valida regra de negócio, e o worker não valida — ele consolida o que já foi validado do outro lado.
 
-> Os projetos mantiveram o prefixo `FluxoDeCaixa.*` porque não são unidades de deploy; o prefixo `Carrefour.*` identifica os hosts implantáveis.
+> As bibliotecas mantêm o prefixo `FluxoDeCaixa.*` porque não são unidades de deploy; os hosts implantáveis levam o prefixo do seu papel — `MS.*` para o microsserviço, `WKR.*` para o worker.
 
 ---
 
@@ -170,7 +170,7 @@ sequenceDiagram
     participant C as Comerciante
     participant Web as Blazor WASM
     participant KC as Keycloak
-    participant API as Carrefour.MS.FluxoDeCaixa
+    participant API as MS.FluxoDeCaixa
     participant JWT as JwtBearer
     participant MediatR
     participant Marten as Marten (PostgreSQL)
@@ -210,7 +210,7 @@ sequenceDiagram
 **Padrão Persist-then-Publish:**
 1. Marten persiste o evento no PostgreSQL (source of truth)
 2. MassTransit publica no exchange do tipo `LancamentoRegistrado` no RabbitMQ (best-effort). O `Publish` não endereça fila nem serviço: quem cria a fila `lancamento-registrado` e a liga a esse exchange é o próprio worker, no `ConfigureEndpoints`
-3. O `Carrefour.WKR.Consolidacao` consome dessa fila, em outro processo, e faz upsert idempotente em `consolidado_diario`. Com o worker fora do ar as mensagens ficam retidas na fila durável — o `POST /lancamentos` continua respondendo 201
+3. O `WKR.Consolidacao` consome dessa fila, em outro processo, e faz upsert idempotente em `consolidado_diario`. Com o worker fora do ar as mensagens ficam retidas na fila durável — o `POST /lancamentos` continua respondendo 201
 
 ---
 
@@ -221,7 +221,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant C as Comerciante
-    participant API as Carrefour.MS.FluxoDeCaixa
+    participant API as MS.FluxoDeCaixa
     participant MediatR
     participant Repo as PostgresConsolidadoRepository
     participant PG as PostgreSQL (read model)
@@ -237,9 +237,9 @@ sequenceDiagram
 ```
 
 **Separação de leitura e escrita (CQRS):**
-- Escrita: Event Sourcing via Marten (append-only), no `Carrefour.MS.FluxoDeCaixa`
+- Escrita: Event Sourcing via Marten (append-only), no `MS.FluxoDeCaixa`
 - Leitura: Tabela `consolidado_diario` com Npgsql (SELECT por chave primária), também servida pelo MS
-- Quem **popula** essa tabela é o `Carrefour.WKR.Consolidacao`, fora deste fluxo. A consulta não depende do worker estar de pé: ela lê a última versão materializada. Se o worker estiver atrasado, o saldo fica temporariamente defasado — consistência eventual, assumida no ADR-04 — mas a consulta nunca falha por causa dele
+- Quem **popula** essa tabela é o `WKR.Consolidacao`, fora deste fluxo. A consulta não depende do worker estar de pé: ela lê a última versão materializada. Se o worker estiver atrasado, o saldo fica temporariamente defasado — consistência eventual, assumida no ADR-04 — mas a consulta nunca falha por causa dele
 
 **Isolamento multi-inquilino:** o `ComercianteId` vem da claim `sub` do JWT e nunca do body ou da query string. A chave primária `(comerciante_id, data)` garante o isolamento no nível do schema — ver ADR-03.
 
@@ -425,7 +425,7 @@ Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`.
 
 - **Status:** Proposta (arquitetura alvo)
 - **Contexto:** O enunciado do desafio pede **critérios de segurança para consumo (integração) de serviços**. Um sistema legado on-premises precisa consumir a API, e autenticá-lo por senha ou API key seria frágil: chave estática vaza, não expira e não identifica a máquina de origem.
-- **Decisão:** Todo tráfego externo entra pelo `Carrefour.APG.FluxoCaixa`. Para o legado, **mTLS**: o cliente apresenta certificado emitido por uma CA privada, e o gateway valida contra um **CA TrustStore** (bucket S3). O gateway concentra ainda *throttling*, validação do token OIDC e registro de auditoria.
+- **Decisão:** Todo tráfego externo entra pelo `APG.FluxoCaixa`. Para o legado, **mTLS**: o cliente apresenta certificado emitido por uma CA privada, e o gateway valida contra um **CA TrustStore** (bucket S3). O gateway concentra ainda *throttling*, validação do token OIDC e registro de auditoria.
 - **Consequências:**
   - ✅ **Autenticação mútua** — o legado prova quem é por certificado, não por segredo compartilhado
   - ✅ Revogação por certificado, sem alterar a aplicação
@@ -442,8 +442,8 @@ Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`.
 
   | Serviço | Papel | Superfície |
   |---|---|---|
-  | `Carrefour.MS.FluxoDeCaixa` | API REST, escrita no event store, **publica** `LancamentoRegistrado`, **lê** o consolidado | HTTP `:5000` |
-  | `Carrefour.WKR.Consolidacao` | **Consome** a fila e materializa `consolidado_diario` | Apenas probes de saúde `:5001` |
+  | `MS.FluxoDeCaixa` | API REST, escrita no event store, **publica** `LancamentoRegistrado`, **lê** o consolidado | HTTP `:5000` |
+  | `WKR.Consolidacao` | **Consome** a fila e materializa `consolidado_diario` | Apenas probes de saúde `:5001` |
 
   O registro no contêiner de DI é granular (`AddConsolidadoRepositorio`, `AddConsolidadoConsultas`): cada serviço compõe só o que usa, e o MS **não registra consumer algum**.
 
@@ -477,7 +477,7 @@ Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`.
 
 - **Status:** Proposta (arquitetura alvo)
 - **Contexto:** O [ADR-11](#adr-11-configuração-de-identidade-sem-fallback-em-código) garante que não há segredo embutido no código, mas no ambiente local a configuração ainda chega por variável de ambiente. Em produção isso é insuficiente: variável de ambiente aparece em descrição de task, em log de deploy e não rotaciona.
-- **Decisão:** `Carrefour.SecretsManager.FluxoDeCaixa` guarda credenciais do PostgreSQL e do RabbitMQ, com rotação automática. MS e WKR as obtêm em tempo de execução via IAM role da task — sem credencial estática em lugar nenhum.
+- **Decisão:** `SecretsManager.FluxoDeCaixa` guarda credenciais do PostgreSQL e do RabbitMQ, com rotação automática. MS e WKR as obtêm em tempo de execução via IAM role da task — sem credencial estática em lugar nenhum.
 - **Consequências:**
   - ✅ Rotação sem redeploy
   - ✅ Acesso auditável por IAM: quem leu qual segredo e quando
@@ -508,7 +508,7 @@ Os ADRs acima descrevem o que está **implementado** e roda em `docker compose`.
   | Pacote `FluxoDeCaixa.Contracts` em feed interno | Feed, versionamento e pipeline de publicação | Baixo — é a resposta certa quando há vários consumidores |
   | Cópia local do contrato | Duplicação de um record | Divergência silenciosa entre produtor e consumidor |
 
-- **Decisão:** **Cópia local.** Cada serviço tem sua própria árvore de projetos sob `services/<serviço>/src/`, e o `FluxoDeCaixa.Domain` do worker contém **apenas** `LancamentoRegistrado` — nada de agregados, value objects ou modelos de leitura, que o worker nunca precisou. A regra de evolução fica documentada junto da cópia, em [`FluxoDeCaixa.Domain/README.md`](services/carrefour.wkr.consolidacao/src/FluxoDeCaixa.Domain/README.md).
+- **Decisão:** **Cópia local.** Cada serviço tem sua própria árvore de projetos sob `services/<serviço>/src/`, e o `FluxoDeCaixa.Domain` do worker contém **apenas** `LancamentoRegistrado` — nada de agregados, value objects ou modelos de leitura, que o worker nunca precisou. A regra de evolução fica documentada junto da cópia, em [`FluxoDeCaixa.Domain/README.md`](services/wkr.consolidacao/src/FluxoDeCaixa.Domain/README.md).
 
   É o padrão de quem opera multi-repo: o consumidor não compartilha código com o produtor, ele copia o contrato. Com **um** consumidor, montar feed, versionamento e pipeline de publicação custaria mais do que o problema que resolve.
 

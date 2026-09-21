@@ -4,10 +4,10 @@ services:
   # Publica LancamentoRegistrado e segue disponível mesmo sem o worker — é o
   # RNF do desafio garantido no nível de processo (ADR-15).
   # ───────────────────────────────────────────────────────────────────────────
-  carrefour.ms.fluxodecaixa:
+  ms.fluxodecaixa:
     build:
       # Contexto = raiz do "repositório" do serviço. Nada fora dele é usado.
-      context: ./services/carrefour.ms.fluxodecaixa
+      context: ./services/ms.fluxodecaixa
     ports:
       - "5000:8080"
     environment:
@@ -47,9 +47,9 @@ services:
   # Sem superfície HTTP de negócio — apenas probes de saúde.
   # Escala por profundidade de fila, não por RPS: por isso é um serviço próprio.
   # ───────────────────────────────────────────────────────────────────────────
-  carrefour.wkr.consolidacao:
+  wkr.consolidacao:
     build:
-      context: ./services/carrefour.wkr.consolidacao
+      context: ./services/wkr.consolidacao
     ports:
       # Exposta apenas para inspeção das probes durante a avaliação.
       # Em produção o worker não publica porta alguma.
@@ -78,7 +78,7 @@ services:
     ports:
       - "5010:80"
     depends_on:
-      carrefour.ms.fluxodecaixa:
+      ms.fluxodecaixa:
         condition: service_healthy
 
   postgres:

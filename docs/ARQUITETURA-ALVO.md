@@ -24,13 +24,13 @@ graph TB
 
     subgraph Dominio["AWS — Conta Domínio Fluxo de Caixa · sa-east-1"]
         subgraph VPCDom["vpc-fluxocaixa-prod-sa-east-1"]
-            APG["Carrefour.APG.FluxoCaixa<br/>API Gateway · mTLS · throttling"]
+            APG["APG.FluxoCaixa<br/>API Gateway · mTLS · throttling"]
             CATS[("CA TrustStore<br/>S3")]
-            MS["Carrefour.MS.FluxoDeCaixa<br/>API + escrita"]
-            WKR["Carrefour.WKR.<br/>FluxoDeCaixaConsolidacao<br/>worker"]
-            MQ["Carrefour.RabbitMQ.Fila<br/>Amazon MQ"]
-            PG[("Carrefour.Postgres.FluxoDeCaixa<br/>RDS PostgreSQL")]
-            SM["Carrefour.SecretsManager.<br/>FluxoDeCaixa"]
+            MS["MS.FluxoDeCaixa<br/>API + escrita"]
+            WKR["WKR.Consolidacao<br/>worker"]
+            MQ["RabbitMQ.Fila<br/>Amazon MQ"]
+            PG[("Postgres.FluxoDeCaixa<br/>RDS PostgreSQL")]
+            SM["SecretsManager.<br/>FluxoDeCaixa"]
             ObsDom["Observabilidade<br/>Logs · Métricas · Traces"]
         end
     end
@@ -71,7 +71,7 @@ graph TB
 | Contas AWS | Nenhuma (tudo local) | **Duas**: Share Enterprise e Domínio | Fronteira de conta espelha fronteira de *bounded context*; contém *blast radius* e atribui custo (ADR-12) |
 | Entrada | API exposta direto | **API Gateway** com mTLS e CA TrustStore | Ponto único de entrada; autentica o legado por certificado, não por segredo estático (ADR-14) |
 | Conectividade | Rede do Docker | **Transit Gateway** (entre contas) + **Direct Connect** (on-premises) | Tráfego de identidade e integração nunca passa pela internet pública (ADR-17) |
-| Deploy | ✅ **Já separado**: `Carrefour.MS.FluxoDeCaixa` + `Carrefour.WKR.Consolidacao` (containers distintos) | Os mesmos dois serviços, em tasks ECS com autoscaling próprio | Escalam por gatilhos diferentes: escrita por RPS, consolidação por lag da fila (ADR-15) |
+| Deploy | ✅ **Já separado**: `MS.FluxoDeCaixa` + `WKR.Consolidacao` (containers distintos) | Os mesmos dois serviços, em tasks ECS com autoscaling próprio | Escalam por gatilhos diferentes: escrita por RPS, consolidação por lag da fila (ADR-15) |
 | Banco | Uma instância PostgreSQL | RDS Multi-AZ + read replica para o consolidado | Falha de AZ não derruba o negócio; leitura de pico não compete com a escrita |
 | Broker | Container RabbitMQ único | Amazon MQ em cluster multi-AZ | O broker vira SPOF sem cluster |
 | Publicação de evento | Persist-then-publish (ADR-04) | **Outbox transacional** | Fecha a janela em que o evento é gravado e a publicação falha |

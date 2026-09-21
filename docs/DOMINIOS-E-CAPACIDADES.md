@@ -121,8 +121,8 @@ O RNF do desafio — *"o serviço de controle de lançamento não deve ficar ind
 >
 > | Domínio | Serviço | Escala por |
 > |---|---|---|
-> | Lançamentos | `Carrefour.MS.FluxoDeCaixa` | Requisições por segundo |
-> | Consolidação | `Carrefour.WKR.Consolidacao` | Profundidade da fila |
+> | Lançamentos | `MS.FluxoDeCaixa` | Requisições por segundo |
+> | Consolidação | `WKR.Consolidacao` | Profundidade da fila |
 >
 > A comunicação entre eles é **exclusivamente** pelo evento `LancamentoRegistrado` no RabbitMQ — não há chamada direta, nem `depends_on` do MS para o worker no `compose.yaml`. Derrubar a consolidação não afeta o registro de lançamentos: as mensagens ficam retidas e são processadas quando ela volta, sem perda nem duplicação.
 >
