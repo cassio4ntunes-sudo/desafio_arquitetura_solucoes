@@ -55,6 +55,14 @@ Web (Blazor WASM) ──OIDC/PKCE──→ Keycloak
 - **API** — Endpoints Minimal API + validação do token do Keycloak + documento OpenAPI + middleware. Não emite token nem guarda senha.
 - **Web** — Blazor WebAssembly SPA com MudBlazor (Material Design).
 
+### Arquitetura alvo em nuvem
+
+Como o sistema roda em produção na AWS, com as contas segregadas, o API Gateway na borda e o IdP corporativo compartilhado:
+
+![Arquitetura alvo em AWS](ArquiteturaDesafioCarrefour.drawio.png)
+
+O fonte editável é o [`ArquiteturaDesafioCarrefour.drawio`](ArquiteturaDesafioCarrefour.drawio). O racional de cada componente está em [docs/ARQUITETURA-ALVO.md](docs/ARQUITETURA-ALVO.md), e as decisões que o sustentam nos ADR-12 a ADR-18 de [ARCHITECTURE.md](ARCHITECTURE.md).
+
 📐 Para diagramas C4, sequência e ADRs completos, veja [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
